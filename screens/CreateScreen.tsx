@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, Switch, Alert, ActivityIndicator, Modal,
+  StyleSheet, Switch, Alert, ActivityIndicator, Modal, Platform,
 } from 'react-native'
+import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker'
 import type { CreateScreenProps } from '../navigation/types'
 import { ROLES, ROLE_EQUIVALENT_YEARS } from '../lib/calculations'
 import { createRoom, updateRoom, getSuggestions, type Suggestion } from '../lib/actions'
@@ -66,6 +67,8 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
   const [tiltModalOpen, setTiltModalOpen] = useState(false)
   const [multiplierModalIdx, setMultiplierModalIdx] = useState<number | null>(null)
   const [roleModalIdx, setRoleModalIdx] = useState<number | null>(null)
+  const [showDatePicker, setShowDatePicker] = useState(false)
+  const [pickerDate, setPickerDate] = useState(new Date())
 
   useEffect(() => {
     if (fromShareId) {
@@ -211,6 +214,21 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
     setSuggestions(null)
   }
 
+  const handleDatePickerChange = (_event: DateTimePickerEvent, selectedDate?: Date) => {
+    if (selectedDate) setPickerDate(selectedDate)
+  }
+
+  const handleDateConfirm = () => {
+    const d = pickerDate
+    const yyyy = d.getFullYear()
+    const mm = String(d.getMonth() + 1).padStart(2, '0')
+    const dd = String(d.getDate()).padStart(2, '0')
+    const yyyymmdd = `${yyyy}${mm}${dd}`
+    const withoutDate = eventDate.replace(/^\d{8}\s*/, '').trim()
+    setEventDate(withoutDate ? `${yyyymmdd} ${withoutDate}` : `${yyyymmdd} `)
+    setShowDatePicker(false)
+  }
+
   const handleSubmit = async () => {
     setError('')
     if (!Number(events[0]?.totalAmount) || Number(events[0].totalAmount) <= 0) {
@@ -279,13 +297,18 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
         {/* イベント名 */}
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>飲み会・イベント名</Text>
-          <TextInput
-            style={styles.input}
-            value={eventDate}
-            onChangeText={setEventDate}
-            placeholder={`例：${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2,'0')}${String(new Date().getDate()).padStart(2,'0')} 部署飲み`}
-            placeholderTextColor="#9ca3af"
-          />
+          <View style={styles.eventDateRow}>
+            <TouchableOpacity style={styles.calendarBtn} onPress={() => setShowDatePicker(true)}>
+              <Text style={styles.calendarBtnText}>📅</Text>
+            </TouchableOpacity>
+            <TextInput
+              style={[styles.input, styles.flex1]}
+              value={eventDate}
+              onChangeText={setEventDate}
+              placeholder={`例：${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2,'0')}${String(new Date().getDate()).padStart(2,'0')} 部署飲み`}
+              placeholderTextColor="#9ca3af"
+            />
+          </View>
         </View>
 
         {/* 傾斜設定 */}
@@ -571,6 +594,33 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {/* 日付ピッカーモーダル */}
+      <Modal visible={showDatePicker} transparent animationType="slide" onRequestClose={() => setShowDatePicker(false)}>
+        <TouchableOpacity style={styles.modalOverlay} onPress={() => setShowDatePicker(false)} activeOpacity={1}>
+          <View style={styles.datePickerSheet} onStartShouldSetResponder={() => true}>
+            <View style={styles.datePickerHeader}>
+              <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                <Text style={styles.datePickerCancel}>キャンセル</Text>
+              </TouchableOpacity>
+              <Text style={styles.datePickerTitle}>📅 日付を選択</Text>
+              <TouchableOpacity onPress={handleDateConfirm}>
+                <Text style={styles.datePickerConfirm}>確定</Text>
+              </TouchableOpacity>
+            </View>
+            {Platform.OS === 'ios' && (
+              <DateTimePicker
+                value={pickerDate}
+                mode="date"
+                display="spinner"
+                onChange={handleDatePickerChange}
+                locale="ja-JP"
+                style={styles.datePicker}
+              />
+            )}
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </>
   )
 }
@@ -638,6 +688,15 @@ const styles = StyleSheet.create({
   submitBtn: { backgroundColor: '#e97316', borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
   submitBtnDisabled: { opacity: 0.6 },
   submitBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  eventDateRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  calendarBtn: { width: 44, height: 44, borderWidth: 2, borderColor: '#fed7aa', backgroundColor: '#fff7ed', borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  calendarBtnText: { fontSize: 20 },
+  datePickerSheet: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 40 },
+  datePickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  datePickerTitle: { fontSize: 15, fontWeight: '700', color: '#1a1a2e' },
+  datePickerCancel: { fontSize: 15, color: '#9ca3af' },
+  datePickerConfirm: { fontSize: 15, fontWeight: '700', color: '#e97316' },
+  datePicker: { height: 200, backgroundColor: '#fff' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   modalSheet: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 20, paddingBottom: 40 },
   modalTitle: { fontSize: 16, fontWeight: '700', color: '#1a1a2e', textAlign: 'center', marginBottom: 12, paddingHorizontal: 20 },

@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "傾斜精算",
+    "name": "傾斜精算くん",
     "slug": "nomikai-seisan-app",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -26,6 +26,9 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "@react-native-community/datetimepicker"
+    ]
   }
 }

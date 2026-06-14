@@ -6,7 +6,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   return (
     <View style={styles.container}>
       <View style={styles.hero}>
-        <Text style={styles.title}>傾斜精算</Text>
+        <Text style={styles.title}>⚖️ 傾斜精算くん</Text>
         <Text style={styles.subtitle}>役職・年次に応じた飲み会精算</Text>
       </View>
 

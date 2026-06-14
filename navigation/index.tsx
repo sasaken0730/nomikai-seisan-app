@@ -37,7 +37,7 @@ export default function AppNavigator() {
           contentStyle: { backgroundColor: '#f5f5f5' },
         }}
       >
-        <Stack.Screen name="Home" component={HomeScreen} options={{ title: '傾斜精算' }} />
+        <Stack.Screen name="Home" component={HomeScreen} options={{ title: '⚖️ 傾斜精算くん' }} />
         <Stack.Screen name="Create" component={CreateScreen} options={{ title: '精算を作成' }} />
         <Stack.Screen name="Room" component={RoomScreen} options={{ title: '精算結果' }} />
         <Stack.Screen name="Edit" component={EditScreen} options={{ title: '精算を編集' }} />
