@@ -22,6 +22,7 @@ interface EventState {
   name: string
   totalAmount: string
   splitMode: 'tilt' | 'equal'
+  payerParticipantIdx: number | null
 }
 
 const EVENT_PRESETS = ['1次会', '2次会', '3次会', '4次会', 'タクシー代', 'プレゼント代']
@@ -49,7 +50,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
   const [eventDate, setEventDate] = useState('')
   const [tiltRatio, setTiltRatio] = useState('2.0')
   const [manualMode, setManualMode] = useState(false)
-  const [events, setEvents] = useState<EventState[]>([{ name: '1次会', totalAmount: '', splitMode: 'tilt' }])
+  const [events, setEvents] = useState<EventState[]>([{ name: '1次会', totalAmount: '', splitMode: 'tilt', payerParticipantIdx: null }])
   const [participants, setParticipants] = useState<ParticipantState[]>([
     makeParticipant(1),
     makeParticipant(1),
@@ -89,7 +90,10 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
       const eData = rawEvents ?? []
       setTiltRatio(((room.tilt_ratio as number) ?? 2.0).toFixed(1))
       setManualMode((room.manual_mode as boolean) ?? false)
-      setEvents(eData.length > 0 ? eData.map((e) => ({ name: e.event_name as string, totalAmount: '', splitMode: (e.split_mode as string) === 'equal' ? 'equal' : 'tilt' })) : [{ name: '1次会', totalAmount: '', splitMode: 'tilt' }])
+      setEvents(eData.length > 0 ? eData.map((e) => {
+        const payerIdx = pData.findIndex((p) => p.id === e.payer_participant_id)
+        return { name: e.event_name as string, totalAmount: '', splitMode: (e.split_mode as string) === 'equal' ? 'equal' : 'tilt', payerParticipantIdx: payerIdx >= 0 ? payerIdx : null }
+      }) : [{ name: '1次会', totalAmount: '', splitMode: 'tilt', payerParticipantIdx: null }])
       const orgIdx = pData.findIndex((p) => p.is_organizer)
       setOrganizerIdx(orgIdx >= 0 ? orgIdx : null)
       setParticipants(pData.map((p, pIdx) => ({
@@ -115,7 +119,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
       setTiltRatio(((tmpl.tilt_ratio as number) ?? 2.0).toFixed(1))
       setManualMode((tmpl.manual_mode as boolean) ?? false)
       const evtCount = eData.length || 1
-      setEvents(eData.length > 0 ? eData.map((e) => ({ name: e.name, totalAmount: '', splitMode: e.split_mode === 'equal' ? 'equal' : 'tilt' })) : [{ name: '1次会', totalAmount: '', splitMode: 'tilt' }])
+      setEvents(eData.length > 0 ? eData.map((e) => ({ name: e.name, totalAmount: '', splitMode: e.split_mode === 'equal' ? 'equal' : 'tilt', payerParticipantIdx: null })) : [{ name: '1次会', totalAmount: '', splitMode: 'tilt', payerParticipantIdx: null }])
       const orgIdx = pData.findIndex((p) => p.is_organizer)
       setOrganizerIdx(orgIdx >= 0 ? orgIdx : null)
       setParticipants(pData.map((p) => ({ name: p.name, role: p.role, tenure_years: p.tenure_years != null ? String(p.tenure_years) : '', fixed_amount: '', manual_multiplier: String(p.manual_multiplier ?? 1.0), attendances: Array<boolean>(evtCount).fill(true) })))
@@ -126,7 +130,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
 
   const addEvent = () => {
     const name = defaultEventName(events.length)
-    setEvents([...events, { name, totalAmount: '', splitMode: 'tilt' }])
+    setEvents([...events, { name, totalAmount: '', splitMode: 'tilt', payerParticipantIdx: organizerIdx }])
     setParticipants(participants.map((p) => ({ ...p, attendances: [...p.attendances, true] })))
   }
 
@@ -149,6 +153,29 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
     if (organizerIdx === i) setOrganizerIdx(null)
     else if (organizerIdx !== null && organizerIdx > i) setOrganizerIdx(organizerIdx - 1)
     if (suggestions?.idx === i) setSuggestions(null)
+    setEvents(events.map((ev) => ({
+      ...ev,
+      payerParticipantIdx:
+        ev.payerParticipantIdx === i
+          ? null
+          : ev.payerParticipantIdx != null && ev.payerParticipantIdx > i
+          ? ev.payerParticipantIdx - 1
+          : ev.payerParticipantIdx,
+    })))
+  }
+
+  const handleSetOrganizer = (newIdx: number | null) => {
+    const prevIdx = organizerIdx
+    setOrganizerIdx(newIdx)
+    if (newIdx !== null) {
+      setEvents((prev) => prev.map((ev) => {
+        const payerIsUnset = ev.payerParticipantIdx == null
+        const payerWasPrevOrganizer = ev.payerParticipantIdx === prevIdx
+        return payerIsUnset || payerWasPrevOrganizer
+          ? { ...ev, payerParticipantIdx: newIdx }
+          : ev
+      }))
+    }
   }
 
   const updateParticipant = (i: number, field: keyof ParticipantState, value: string | boolean[]) => {
@@ -203,12 +230,21 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
         tilt_ratio: parseFloat(tiltRatio) || 2.0,
         manual_mode: manualMode,
         device_id: isEdit ? undefined : deviceId,
-        events: events.map((ev, i) => ({
-          name: ev.name.trim() || `${i + 1}次会`,
-          total_amount: Number(ev.totalAmount) || 0,
-          sort_order: i,
-          split_mode: ev.splitMode ?? 'tilt',
-        })),
+        events: events.map((ev, i) => {
+          const payerValidIdx = (() => {
+            const rawIdx = ev.payerParticipantIdx ?? null
+            if (rawIdx === null) return null
+            const validIdx = validEntries.findIndex(({ idx }) => idx === rawIdx)
+            return validIdx >= 0 ? validIdx : null
+          })()
+          return {
+            name: ev.name.trim() || `${i + 1}次会`,
+            total_amount: Number(ev.totalAmount) || 0,
+            sort_order: i,
+            split_mode: ev.splitMode ?? 'tilt',
+            payer_participant_idx: payerValidIdx,
+          }
+        }),
         participants: validEntries.map(({ p, idx }) => ({
           name: p.name.trim(),
           role: p.role,
@@ -350,7 +386,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                     </View>
                   )}
                 </View>
-                <TouchableOpacity style={[styles.organizerBtn, organizerIdx === i && styles.organizerBtnActive]} onPress={() => setOrganizerIdx(organizerIdx === i ? null : i)}>
+                <TouchableOpacity style={[styles.organizerBtn, organizerIdx === i && styles.organizerBtnActive]} onPress={() => handleSetOrganizer(organizerIdx === i ? null : i)}>
                   <Text style={styles.organizerBtnText}>{organizerIdx === i ? '👑' : '🎤'} 幹事</Text>
                 </TouchableOpacity>
                 {participants.length > 1 && (
@@ -416,41 +452,54 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
           </TouchableOpacity>
         </View>
 
-        {/* 出席管理（2会以上） */}
-        {events.length > 1 && (
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>出席管理</Text>
-            <Text style={styles.hint}>各会への参加をチェックしてください</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              <View>
-                <View style={styles.tableRow}>
-                  <Text style={[styles.tableCell, styles.tableHeaderCell, styles.nameCell]}>名前</Text>
-                  {events.map((ev, eIdx) => (
-                    <Text key={eIdx} style={[styles.tableCell, styles.tableHeaderCell, styles.checkCell]}>{ev.name || `${eIdx + 1}次会`}</Text>
-                  ))}
-                </View>
-                {participants.map((p, pIdx) =>
-                  p.name ? (
-                    <View key={pIdx} style={styles.tableRow}>
-                      <Text style={[styles.tableCell, styles.nameCell]} numberOfLines={1}>{p.name}</Text>
-                      {events.map((_, eIdx) => (
-                        <View key={eIdx} style={[styles.tableCell, styles.checkCell, styles.checkCellCenter]}>
-                          <Switch
-                            value={p.attendances[eIdx] ?? true}
-                            onValueChange={(v) => updateAttendance(pIdx, eIdx, v)}
-                            trackColor={{ false: '#d1d5db', true: '#fb923c' }}
-                            thumbColor="#fff"
-                            style={styles.switch}
-                          />
-                        </View>
-                      ))}
-                    </View>
-                  ) : null
-                )}
+        {/* 出席管理・立替者 */}
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>出席管理・立替者</Text>
+          <Text style={styles.hint}>✓：出席　💳：立替者（1会につき1人）</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View>
+              <View style={styles.tableRow}>
+                <Text style={[styles.tableCell, styles.tableHeaderCell, styles.nameCell]}>名前</Text>
+                {events.map((ev, eIdx) => (
+                  <Text key={eIdx} style={[styles.tableCell, styles.tableHeaderCell, styles.checkCell]}>{ev.name || `${eIdx + 1}次会`}</Text>
+                ))}
               </View>
-            </ScrollView>
-          </View>
-        )}
+              {participants.map((p, pIdx) =>
+                p.name ? (
+                  <View key={pIdx} style={styles.tableRow}>
+                    <Text style={[styles.tableCell, styles.nameCell]} numberOfLines={1}>{p.name}</Text>
+                    {events.map((ev, eIdx) => {
+                      const isPayer = ev.payerParticipantIdx === pIdx
+                      return (
+                        <View key={eIdx} style={[styles.tableCell, styles.checkCell, styles.checkCellCenter]}>
+                          {events.length > 1 && (
+                            <Switch
+                              value={p.attendances[eIdx] ?? true}
+                              onValueChange={(v) => updateAttendance(pIdx, eIdx, v)}
+                              trackColor={{ false: '#d1d5db', true: '#fb923c' }}
+                              thumbColor="#fff"
+                              style={styles.switch}
+                            />
+                          )}
+                          <TouchableOpacity
+                            style={[styles.payerBtn, isPayer && styles.payerBtnActive]}
+                            onPress={() => {
+                              const next = [...events]
+                              next[eIdx] = { ...next[eIdx], payerParticipantIdx: isPayer ? null : pIdx }
+                              setEvents(next)
+                            }}
+                          >
+                            <Text style={styles.payerBtnText}>💳</Text>
+                          </TouchableOpacity>
+                        </View>
+                      )
+                    })}
+                  </View>
+                ) : null
+              )}
+            </View>
+          </ScrollView>
+        </View>
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
@@ -582,6 +631,9 @@ const styles = StyleSheet.create({
   checkCell: { width: 70 },
   checkCellCenter: { alignItems: 'center', justifyContent: 'center' },
   switch: { transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] },
+  payerBtn: { padding: 4, borderRadius: 6, opacity: 0.4 },
+  payerBtnActive: { opacity: 1, backgroundColor: '#fef3c7' },
+  payerBtnText: { fontSize: 14 },
   errorText: { color: '#dc2626', fontSize: 14, textAlign: 'center', marginBottom: 12 },
   submitBtn: { backgroundColor: '#e97316', borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
   submitBtnDisabled: { opacity: 0.6 },

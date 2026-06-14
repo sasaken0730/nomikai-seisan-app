@@ -14,6 +14,7 @@ export interface EventData {
   total_amount: number
   sort_order: number
   split_mode: string
+  payer_participant_idx: number | null
 }
 
 export interface RoomInput {
@@ -53,6 +54,10 @@ async function insertRoomData(roomId: string, input: RoomInput): Promise<void> {
         total_amount: e.total_amount,
         sort_order: e.sort_order,
         split_mode: e.split_mode,
+        payer_participant_id:
+          e.payer_participant_idx != null
+            ? (dbParticipants[e.payer_participant_idx]?.id as string ?? null)
+            : null,
       }))
     )
     .select('id')

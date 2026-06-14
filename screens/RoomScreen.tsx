@@ -20,11 +20,41 @@ interface RoomData {
   created_at: string
 }
 
+function computeSettlement(
+  results: { id: string; name: string; payment: number }[],
+  events: { id: string; amount: number }[],
+  payerByEventId: Record<string, string | null>
+): { from: string; to: string; amount: number }[] {
+  const balances = results.map((p) => {
+    const totalPaid = events.reduce(
+      (sum, ev) => sum + (ev.amount > 0 && payerByEventId[ev.id] === p.id ? ev.amount : 0),
+      0
+    )
+    return { id: p.id, name: p.name, net: totalPaid - p.payment }
+  })
+
+  const creditors = balances.filter((b) => b.net > 0.5).sort((a, b) => b.net - a.net).map((b) => ({ ...b, rem: b.net }))
+  const debtors = balances.filter((b) => b.net < -0.5).sort((a, b) => a.net - b.net).map((b) => ({ ...b, rem: -b.net }))
+  const transfers: { from: string; to: string; amount: number }[] = []
+  let ci = 0; let di = 0
+  while (ci < creditors.length && di < debtors.length) {
+    const amount = Math.min(creditors[ci].rem, debtors[di].rem)
+    const rounded = Math.round(amount)
+    if (rounded > 0) transfers.push({ from: debtors[di].name, to: creditors[ci].name, amount: rounded })
+    creditors[ci].rem -= amount
+    debtors[di].rem -= amount
+    if (creditors[ci].rem < 0.5) ci++
+    if (debtors[di].rem < 0.5) di++
+  }
+  return transfers
+}
+
 export default function RoomScreen({ navigation, route }: RoomScreenProps) {
   const { shareId } = route.params
   const [room, setRoom] = useState<RoomData | null>(null)
   const [participants, setParticipants] = useState<ParticipantInput[]>([])
   const [events, setEvents] = useState<EventInput[]>([])
+  const [payerByEventId, setPayerByEventId] = useState<Record<string, string | null>>({})
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [savingTemplate, setSavingTemplate] = useState(false)
@@ -65,13 +95,19 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
         is_organizer: p.is_organizer as boolean,
         manual_multiplier: (p.manual_multiplier as number | null) ?? 1,
       })))
-      setEvents((rawEvents ?? []).map((e) => ({
+      const eventsData = (rawEvents ?? []).map((e) => ({
         id: e.id as string,
         name: e.event_name as string,
         amount: e.total_amount as number,
-        splitMode: (e.split_mode as string) === 'equal' ? 'equal' : 'tilt',
+        splitMode: ((e.split_mode as string) === 'equal' ? 'equal' : 'tilt') as 'tilt' | 'equal',
         attendeeIds: (rawAttendances ?? []).filter((a) => a.event_id === e.id).map((a) => a.participant_id as string),
-      })))
+      }))
+      setEvents(eventsData)
+      const payerMap: Record<string, string | null> = {}
+      ;(rawEvents ?? []).forEach((e) => {
+        payerMap[e.id as string] = (e.payer_participant_id as string | null) ?? null
+      })
+      setPayerByEventId(payerMap)
     } finally {
       setLoading(false)
     }
@@ -253,6 +289,39 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
         </View>
       )}
 
+      {/* 支払い調整（立替者が設定されている場合のみ） */}
+      {Object.values(payerByEventId).some((v) => v !== null) && (() => {
+        const transfers = computeSettlement(sortedResults, events, payerByEventId)
+        if (transfers.length === 0) return null
+        return (
+          <View style={styles.settlementCard}>
+            <Text style={styles.settlementTitle}>💸 支払い調整</Text>
+            <Text style={styles.settlementSub}>立替者への支払いをまとめました</Text>
+            <View style={styles.payerBadgeRow}>
+              {events.filter((ev) => ev.amount > 0 && payerByEventId[ev.id]).map((ev) => {
+                const payer = sortedResults.find((r) => r.id === payerByEventId[ev.id])
+                if (!payer) return null
+                return (
+                  <View key={ev.id} style={styles.payerBadge}>
+                    <Text style={styles.payerBadgeText}>{ev.name}：{payer.name}が立替</Text>
+                  </View>
+                )
+              })}
+            </View>
+            {transfers.map((t, i) => (
+              <View key={i} style={styles.transferRow}>
+                <View style={styles.transferLeft}>
+                  <Text style={styles.transferFrom}>{t.from}</Text>
+                  <Text style={styles.transferArrow}> → </Text>
+                  <Text style={styles.transferTo}>{t.to}</Text>
+                </View>
+                <Text style={styles.transferAmount}>{t.amount.toLocaleString()}<Text style={styles.transferUnit}>円</Text></Text>
+              </View>
+            ))}
+          </View>
+        )
+      })()}
+
       {/* アクションボタン群 */}
       <View style={styles.actionsCard}>
         <Text style={styles.actionsTitle}>共有・保存</Text>
@@ -336,6 +405,19 @@ const styles = StyleSheet.create({
   tableNameCell: { width: 80 },
   tableAmountCell: { width: 80, textAlign: 'right' },
   tableTotalCell: { fontWeight: '700', color: '#e97316' },
+  settlementCard: { backgroundColor: '#eff6ff', borderRadius: 16, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: '#bfdbfe' },
+  settlementTitle: { fontSize: 15, fontWeight: '700', color: '#1e40af', marginBottom: 2 },
+  settlementSub: { fontSize: 12, color: '#6b7280', marginBottom: 10 },
+  payerBadgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
+  payerBadge: { backgroundColor: '#dbeafe', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3 },
+  payerBadgeText: { fontSize: 11, color: '#1d4ed8' },
+  transferRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 12, marginBottom: 6 },
+  transferLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, flexWrap: 'wrap' },
+  transferFrom: { fontSize: 14, fontWeight: '600', color: '#374151' },
+  transferArrow: { fontSize: 14, color: '#9ca3af' },
+  transferTo: { fontSize: 14, fontWeight: '600', color: '#1d4ed8' },
+  transferAmount: { fontSize: 18, fontWeight: '700', color: '#2563eb', marginLeft: 8 },
+  transferUnit: { fontSize: 12, fontWeight: '400', color: '#9ca3af' },
   actionsCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
   actionsTitle: { fontSize: 14, fontWeight: '700', color: '#374151', marginBottom: 10 },
   actionBtn: { borderWidth: 1.5, borderColor: '#e5e7eb', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginBottom: 8 },
