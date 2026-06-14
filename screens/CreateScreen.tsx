@@ -45,7 +45,7 @@ function defaultEventName(currentCount: number): string {
 }
 
 export default function CreateScreen({ navigation, route }: CreateScreenProps) {
-  const { fromShareId, templateId } = route.params ?? {}
+  const { fromShareId, templateId, copyFromShareId } = route.params ?? {}
   const isEdit = !!fromShareId
 
   const [eventDate, setEventDate] = useState('')
@@ -77,8 +77,10 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
       loadFromRoom(fromShareId)
     } else if (templateId) {
       loadFromTemplate(templateId)
+    } else if (copyFromShareId) {
+      loadFromRoomCopy(copyFromShareId)
     }
-  }, [fromShareId, templateId])
+  }, [fromShareId, templateId, copyFromShareId])
 
   async function loadFromRoom(shareId: string) {
     setInitialLoading(true)
@@ -120,14 +122,62 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
       const { data: tmpl } = await supabase.from('nomikai_seisan_templates').select('*').eq('id', tmplId).single()
       if (!tmpl) return
       const pData = (tmpl.participants_data as { name: string; role: string; tenure_years: number | null; is_organizer: boolean; manual_multiplier: number }[]) ?? []
-      const eData = (tmpl.events_data as { name: string; split_mode: string }[]) ?? []
+      const eData = (tmpl.events_data as { name: string; split_mode: string; total_amount?: number; payer_participant_name?: string | null }[]) ?? []
       setTiltRatio(((tmpl.tilt_ratio as number) ?? 2.0).toFixed(1))
       setManualMode((tmpl.manual_mode as boolean) ?? false)
       const evtCount = eData.length || 1
-      setEvents(eData.length > 0 ? eData.map((e) => ({ name: e.name, totalAmount: '', splitMode: e.split_mode === 'equal' ? 'equal' : 'tilt', payerParticipantIdx: null })) : [{ name: '1次会', totalAmount: '', splitMode: 'tilt', payerParticipantIdx: null }])
+      setEvents(eData.length > 0 ? eData.map((e) => {
+        const payerIdx = e.payer_participant_name ? pData.findIndex((p) => p.name === e.payer_participant_name) : -1
+        return {
+          name: e.name,
+          totalAmount: e.total_amount ? String(e.total_amount) : '',
+          splitMode: e.split_mode === 'equal' ? 'equal' : 'tilt',
+          payerParticipantIdx: payerIdx >= 0 ? payerIdx : null,
+        }
+      }) : [{ name: '1次会', totalAmount: '', splitMode: 'tilt', payerParticipantIdx: null }])
       const orgIdx = pData.findIndex((p) => p.is_organizer)
       setOrganizerIdx(orgIdx >= 0 ? orgIdx : null)
       setParticipants(pData.map((p) => ({ name: p.name, role: p.role, tenure_years: p.tenure_years != null ? String(p.tenure_years) : '', fixed_amount: '', manual_multiplier: String(p.manual_multiplier ?? 1.0), attendances: Array<boolean>(evtCount).fill(true) })))
+    } finally {
+      setInitialLoading(false)
+    }
+  }
+
+  async function loadFromRoomCopy(shareId: string) {
+    setInitialLoading(true)
+    try {
+      const { data: room } = await supabase.from('nomikai_seisan_rooms').select('*').eq('share_id', shareId).single()
+      if (!room) return
+      const { data: rawParticipants } = await supabase.from('nomikai_seisan_participants').select('*').eq('room_id', room.id).order('created_at', { ascending: true })
+      const { data: rawEvents } = await supabase.from('nomikai_seisan_events').select('*').eq('room_id', room.id).order('sort_order', { ascending: true })
+      const eventIds = (rawEvents ?? []).map((e) => e.id as string)
+      const { data: rawAttendances } = eventIds.length
+        ? await supabase.from('nomikai_seisan_event_attendances').select('event_id, participant_id').in('event_id', eventIds)
+        : { data: [] }
+      const pData = rawParticipants ?? []
+      const eData = rawEvents ?? []
+      setTiltRatio(((room.tilt_ratio as number) ?? 2.0).toFixed(1))
+      setManualMode((room.manual_mode as boolean) ?? false)
+      setEventDate('')
+      setEvents(eData.length > 0 ? eData.map((e) => {
+        const payerIdx = pData.findIndex((p) => p.id === e.payer_participant_id)
+        return {
+          name: e.event_name as string,
+          totalAmount: e.total_amount ? String(e.total_amount as number) : '',
+          splitMode: (e.split_mode as string) === 'equal' ? 'equal' : 'tilt',
+          payerParticipantIdx: payerIdx >= 0 ? payerIdx : null,
+        }
+      }) : [{ name: '1次会', totalAmount: '', splitMode: 'tilt', payerParticipantIdx: null }])
+      const orgIdx = pData.findIndex((p) => p.is_organizer)
+      setOrganizerIdx(orgIdx >= 0 ? orgIdx : null)
+      setParticipants(pData.map((p, pIdx) => ({
+        name: p.name as string,
+        role: p.role as string,
+        tenure_years: p.tenure_years != null ? String(p.tenure_years) : '',
+        fixed_amount: '',
+        manual_multiplier: String(p.manual_multiplier ?? '1.0'),
+        attendances: eData.map((e) => (rawAttendances ?? []).some((a) => a.event_id === e.id && a.participant_id === pData[pIdx].id)),
+      })))
     } finally {
       setInitialLoading(false)
     }
@@ -644,12 +694,19 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
       {/* メンバー選択モーダル */}
       <Modal visible={memberPickerIdx !== null} transparent animationType="slide" onRequestClose={() => setMemberPickerIdx(null)}>
         <TouchableOpacity style={styles.modalOverlay} onPress={() => setMemberPickerIdx(null)} activeOpacity={1}>
-          <View style={styles.modalSheet}>
-            <Text style={styles.modalTitle}>過去のメンバーから選択</Text>
+          <View style={styles.memberPickerSheet} onStartShouldSetResponder={() => true}>
+            {/* 固定ヘッダー */}
+            <View style={styles.memberPickerHeader}>
+              <Text style={styles.memberPickerTitle}>過去のメンバーから選択</Text>
+              <TouchableOpacity onPress={() => setMemberPickerIdx(null)} style={styles.memberPickerCloseBtn}>
+                <Text style={styles.memberPickerCloseText}>✕ 閉じる</Text>
+              </TouchableOpacity>
+            </View>
+            {/* スクロールリスト */}
             {memberPickerList.length === 0 ? (
-              <Text style={[styles.hint, { textAlign: 'center', paddingVertical: 20 }]}>過去のメンバーがいません</Text>
+              <Text style={[styles.hint, { textAlign: 'center', paddingVertical: 24 }]}>過去のメンバーがいません</Text>
             ) : (
-              <ScrollView>
+              <ScrollView style={styles.memberPickerList}>
                 {memberPickerList.map((s) => (
                   <TouchableOpacity
                     key={s.name}
@@ -752,6 +809,12 @@ const styles = StyleSheet.create({
   memberPickerBtn: { width: 38, height: 38, borderRadius: 8, borderWidth: 1, borderColor: '#e5e7eb', backgroundColor: '#f9fafb', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   memberPickerBtnText: { fontSize: 16 },
   memberPickerSub: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
+  memberPickerSheet: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 0, paddingBottom: 40, maxHeight: '70%' },
+  memberPickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  memberPickerTitle: { fontSize: 16, fontWeight: '700', color: '#1a1a2e' },
+  memberPickerCloseBtn: { paddingHorizontal: 4, paddingVertical: 4 },
+  memberPickerCloseText: { fontSize: 13, color: '#9ca3af', fontWeight: '600' },
+  memberPickerList: { flexGrow: 0 },
   // 出席管理（マトリクス表）
   matrixTable: { flexDirection: 'row', marginTop: 10, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, overflow: 'hidden' },
   matrixNameCol: { width: 100, borderRightWidth: 1, borderRightColor: '#e5e7eb' },

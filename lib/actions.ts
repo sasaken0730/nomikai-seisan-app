@@ -231,6 +231,8 @@ export interface TemplateParticipant {
 export interface TemplateEvent {
   name: string
   split_mode: string
+  total_amount?: number
+  payer_participant_name?: string | null
 }
 
 export interface TemplateSummary {

@@ -2,7 +2,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 
 export type RootStackParamList = {
   Home: undefined
-  Create: { fromShareId?: string; templateId?: string }
+  Create: { fromShareId?: string; templateId?: string; copyFromShareId?: string }
   Room: { shareId: string }
   Edit: { shareId: string }
   History: undefined

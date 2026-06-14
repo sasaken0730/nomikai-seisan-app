@@ -154,7 +154,11 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
               is_organizer: p.is_organizer,
               manual_multiplier: p.manual_multiplier ?? 1,
             })),
-            eventsData: events.map((e) => ({ name: e.name, split_mode: e.splitMode ?? 'tilt' })),
+            eventsData: events.map((e) => {
+            const payerId = payerByEventId[e.id]
+            const payerName = payerId ? (participants.find((p) => p.id === payerId)?.name ?? null) : null
+            return { name: e.name, split_mode: e.splitMode ?? 'tilt', total_amount: e.amount, payer_participant_name: payerName }
+          }),
           })
           Alert.alert('保存しました', 'テンプレートに保存しました')
         } catch (e) {
@@ -239,9 +243,6 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
             </View>
             <View style={styles.resultRight}>
               <Text style={styles.resultAmount}>{r.payment.toLocaleString()}<Text style={styles.resultUnit}>円</Text></Text>
-              {Math.abs(r.payment - r.rawPayment) > 0.5 && (
-                <Text style={styles.resultRaw}>（本来 {Math.round(r.rawPayment).toLocaleString()}円）</Text>
-              )}
             </View>
           </View>
         ))}
@@ -350,11 +351,11 @@ const styles = StyleSheet.create({
   content: { padding: 16 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyText: { color: '#6b7280', fontSize: 15 },
-  header: { backgroundColor: '#e97316', borderRadius: 16, padding: 20, marginBottom: 14, alignItems: 'center' },
+  header: { backgroundColor: '#1e293b', borderRadius: 16, padding: 20, marginBottom: 14, alignItems: 'center' },
   headerIcon: { fontSize: 36, marginBottom: 4 },
   headerTitle: { fontSize: 22, fontWeight: '800', color: '#fff' },
   headerSub: { fontSize: 13, color: 'rgba(255,255,255,0.8)', marginTop: 4 },
-  headerBadge: { backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4, marginTop: 8 },
+  headerBadge: { backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4, marginTop: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
   headerBadgeText: { color: '#fff', fontSize: 12, fontWeight: '600' },
   summaryScroll: { marginBottom: 14 },
   summaryRow: { flexDirection: 'row', gap: 10, paddingVertical: 4 },

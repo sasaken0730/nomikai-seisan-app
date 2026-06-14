@@ -94,38 +94,53 @@ export default function HistoryScreen({ navigation }: HistoryScreenProps) {
       keyExtractor={(item) => item.share_id}
       contentContainerStyle={items.length === 0 ? styles.emptyContainer : styles.listContent}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadHistory(true)} tintColor="#e97316" />}
+      ListHeaderComponent={
+        items.length > 0 ? (
+          <View style={styles.guidanceBanner}>
+            <Text style={styles.guidanceText}>📋 タップで結果確認、「コピーして作成」で同じメンバー構成の新規精算をすぐに始められます</Text>
+          </View>
+        ) : null
+      }
       ListEmptyComponent={
         <View style={styles.emptyBox}>
           <Text style={styles.emptyIcon}>📋</Text>
           <Text style={styles.emptyTitle}>履歴がありません</Text>
-          <Text style={styles.emptyDesc}>精算を作成して「履歴に保存」すると表示されます</Text>
+          <Text style={styles.emptyDesc}>精算を作成して「履歴に保存」すると、ここから内容をコピーして新規精算をすぐに始められます</Text>
           <TouchableOpacity style={styles.emptyBtn} onPress={() => navigation.navigate('Create', {})}>
             <Text style={styles.emptyBtnText}>新規精算を作成</Text>
           </TouchableOpacity>
         </View>
       }
       renderItem={({ item }) => (
-        <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('Room', { shareId: item.share_id })} activeOpacity={0.8}>
-          <View style={styles.cardTop}>
-            <View style={styles.cardInfo}>
-              {item.event_date ? (
-                <Text style={styles.cardDate}>{item.event_date}</Text>
-              ) : (
-                <Text style={styles.cardDateGray}>日付なし</Text>
-              )}
-              <Text style={styles.cardMeta}>{item.participantCount}名 · 傾斜{item.tilt_ratio.toFixed(1)}倍</Text>
+        <View style={styles.card}>
+          <TouchableOpacity style={styles.cardMain} onPress={() => navigation.navigate('Room', { shareId: item.share_id })} activeOpacity={0.8}>
+            <View style={styles.cardTop}>
+              <View style={styles.cardInfo}>
+                {item.event_date ? (
+                  <Text style={styles.cardDate}>{item.event_date}</Text>
+                ) : (
+                  <Text style={styles.cardDateGray}>日付なし</Text>
+                )}
+                <Text style={styles.cardMeta}>{item.participantCount}名 · 傾斜{item.tilt_ratio.toFixed(1)}倍</Text>
+              </View>
+              <View style={styles.cardRight}>
+                <Text style={styles.cardTotal}>{item.grandTotal.toLocaleString()}<Text style={styles.cardUnit}>円</Text></Text>
+              </View>
             </View>
-            <View style={styles.cardRight}>
-              <Text style={styles.cardTotal}>{item.grandTotal.toLocaleString()}<Text style={styles.cardUnit}>円</Text></Text>
-            </View>
-          </View>
-          <View style={styles.cardBottom}>
             <Text style={styles.cardCreated}>{new Date(item.created_at).toLocaleDateString('ja-JP')} 作成</Text>
+          </TouchableOpacity>
+          <View style={styles.cardBottom}>
+            <TouchableOpacity
+              style={styles.copyBtn}
+              onPress={() => navigation.navigate('Create', { copyFromShareId: item.share_id })}
+            >
+              <Text style={styles.copyBtnText}>📋 コピーして新規作成</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.deleteBtn} onPress={() => handleDelete(item.share_id)}>
               <Text style={styles.deleteBtnText}>削除</Text>
             </TouchableOpacity>
           </View>
-        </TouchableOpacity>
+        </View>
       )}
     />
   )
@@ -135,14 +150,17 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f5f5f5' },
   listContent: { padding: 16, gap: 12 },
   emptyContainer: { flex: 1, padding: 16 },
+  guidanceBanner: { backgroundColor: '#f0fdf4', borderRadius: 12, padding: 12, marginBottom: 4, borderWidth: 1, borderColor: '#bbf7d0' },
+  guidanceText: { fontSize: 12, color: '#16a34a', lineHeight: 18 },
   emptyBox: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80 },
   emptyIcon: { fontSize: 48, marginBottom: 12 },
   emptyTitle: { fontSize: 18, fontWeight: '700', color: '#374151', marginBottom: 8 },
-  emptyDesc: { fontSize: 14, color: '#9ca3af', textAlign: 'center', marginBottom: 24, paddingHorizontal: 20 },
+  emptyDesc: { fontSize: 14, color: '#9ca3af', textAlign: 'center', marginBottom: 24, paddingHorizontal: 20, lineHeight: 22 },
   emptyBtn: { backgroundColor: '#e97316', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 24 },
   emptyBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  card: { backgroundColor: '#fff', borderRadius: 14, padding: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
+  card: { backgroundColor: '#fff', borderRadius: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2, overflow: 'hidden' },
+  cardMain: { padding: 16 },
+  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
   cardInfo: { flex: 1 },
   cardDate: { fontSize: 15, fontWeight: '700', color: '#1a1a2e', marginBottom: 4 },
   cardDateGray: { fontSize: 15, fontWeight: '700', color: '#9ca3af', marginBottom: 4 },
@@ -150,8 +168,10 @@ const styles = StyleSheet.create({
   cardRight: { alignItems: 'flex-end' },
   cardTotal: { fontSize: 20, fontWeight: '800', color: '#e97316' },
   cardUnit: { fontSize: 12, fontWeight: '400', color: '#9ca3af' },
-  cardBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#f3f4f6', paddingTop: 10 },
   cardCreated: { fontSize: 11, color: '#d1d5db' },
-  deleteBtn: { paddingVertical: 4, paddingHorizontal: 10 },
+  cardBottom: { flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#f3f4f6' },
+  copyBtn: { flex: 1, paddingVertical: 11, paddingHorizontal: 14, borderRightWidth: 1, borderRightColor: '#f3f4f6' },
+  copyBtnText: { fontSize: 13, color: '#e97316', fontWeight: '600' },
+  deleteBtn: { paddingVertical: 11, paddingHorizontal: 16 },
   deleteBtnText: { fontSize: 12, color: '#dc2626', fontWeight: '600' },
 })
