@@ -1,13 +1,19 @@
 {
   "expo": {
-    "name": "nomikai-seisan-app",
+    "name": "傾斜精算",
     "slug": "nomikai-seisan-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "scheme": "nomikai-seisan",
+    "extra": {
+      "supabaseUrl": "",
+      "supabaseAnonKey": ""
+    },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.sasaken.nomikaiseisei"
     },
     "android": {
       "adaptiveIcon": {

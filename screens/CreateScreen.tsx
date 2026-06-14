@@ -1,0 +1,596 @@
+import React, { useState, useEffect, useRef, useCallback } from 'react'
+import {
+  View, Text, TextInput, TouchableOpacity, ScrollView,
+  StyleSheet, Switch, Alert, ActivityIndicator, Modal,
+} from 'react-native'
+import type { CreateScreenProps } from '../navigation/types'
+import { ROLES, ROLE_EQUIVALENT_YEARS } from '../lib/calculations'
+import { createRoom, updateRoom, getSuggestions, type Suggestion } from '../lib/actions'
+import { getDeviceId } from '../lib/deviceId'
+import { supabase } from '../lib/supabase'
+
+interface ParticipantState {
+  name: string
+  role: string
+  tenure_years: string
+  fixed_amount: string
+  manual_multiplier: string
+  attendances: boolean[]
+}
+
+interface EventState {
+  name: string
+  totalAmount: string
+  splitMode: 'tilt' | 'equal'
+}
+
+const EVENT_PRESETS = ['1次会', '2次会', '3次会', '4次会', 'タクシー代', 'プレゼント代']
+
+function makeParticipant(evtCount: number): ParticipantState {
+  return {
+    name: '',
+    role: 'その他役職',
+    tenure_years: '',
+    fixed_amount: '',
+    manual_multiplier: '1.0',
+    attendances: Array<boolean>(evtCount).fill(true),
+  }
+}
+
+function defaultEventName(currentCount: number): string {
+  const presets = ['2次会', '3次会', '4次会']
+  return presets[currentCount - 1] ?? `項目${currentCount + 1}`
+}
+
+export default function CreateScreen({ navigation, route }: CreateScreenProps) {
+  const { fromShareId, templateId } = route.params ?? {}
+  const isEdit = !!fromShareId
+
+  const [eventDate, setEventDate] = useState('')
+  const [tiltRatio, setTiltRatio] = useState('2.0')
+  const [manualMode, setManualMode] = useState(false)
+  const [events, setEvents] = useState<EventState[]>([{ name: '1次会', totalAmount: '', splitMode: 'tilt' }])
+  const [participants, setParticipants] = useState<ParticipantState[]>([
+    makeParticipant(1),
+    makeParticipant(1),
+  ])
+  const [organizerIdx, setOrganizerIdx] = useState<number | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [initialLoading, setInitialLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const [suggestions, setSuggestions] = useState<{ idx: number; list: Suggestion[] } | null>(null)
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [presetModalIdx, setPresetModalIdx] = useState<number | null>(null)
+  const [tiltModalOpen, setTiltModalOpen] = useState(false)
+  const [multiplierModalIdx, setMultiplierModalIdx] = useState<number | null>(null)
+  const [roleModalIdx, setRoleModalIdx] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (fromShareId) {
+      loadFromRoom(fromShareId)
+    } else if (templateId) {
+      loadFromTemplate(templateId)
+    }
+  }, [fromShareId, templateId])
+
+  async function loadFromRoom(shareId: string) {
+    setInitialLoading(true)
+    try {
+      const { data: room } = await supabase.from('nomikai_seisan_rooms').select('*').eq('share_id', shareId).single()
+      if (!room) return
+      const { data: rawParticipants } = await supabase.from('nomikai_seisan_participants').select('*').eq('room_id', room.id).order('created_at', { ascending: true })
+      const { data: rawEvents } = await supabase.from('nomikai_seisan_events').select('*').eq('room_id', room.id).order('sort_order', { ascending: true })
+      const eventIds = (rawEvents ?? []).map((e) => e.id as string)
+      const { data: rawAttendances } = eventIds.length
+        ? await supabase.from('nomikai_seisan_event_attendances').select('event_id, participant_id').in('event_id', eventIds)
+        : { data: [] }
+      const pData = rawParticipants ?? []
+      const eData = rawEvents ?? []
+      setTiltRatio(((room.tilt_ratio as number) ?? 2.0).toFixed(1))
+      setManualMode((room.manual_mode as boolean) ?? false)
+      setEvents(eData.length > 0 ? eData.map((e) => ({ name: e.event_name as string, totalAmount: '', splitMode: (e.split_mode as string) === 'equal' ? 'equal' : 'tilt' })) : [{ name: '1次会', totalAmount: '', splitMode: 'tilt' }])
+      const orgIdx = pData.findIndex((p) => p.is_organizer)
+      setOrganizerIdx(orgIdx >= 0 ? orgIdx : null)
+      setParticipants(pData.map((p, pIdx) => ({
+        name: p.name as string,
+        role: p.role as string,
+        tenure_years: p.tenure_years != null ? String(p.tenure_years) : '',
+        fixed_amount: '',
+        manual_multiplier: String(p.manual_multiplier ?? '1.0'),
+        attendances: eData.map((e) => (rawAttendances ?? []).some((a) => a.event_id === e.id && a.participant_id === pData[pIdx].id)),
+      })))
+    } finally {
+      setInitialLoading(false)
+    }
+  }
+
+  async function loadFromTemplate(tmplId: string) {
+    setInitialLoading(true)
+    try {
+      const { data: tmpl } = await supabase.from('nomikai_seisan_templates').select('*').eq('id', tmplId).single()
+      if (!tmpl) return
+      const pData = (tmpl.participants_data as { name: string; role: string; tenure_years: number | null; is_organizer: boolean; manual_multiplier: number }[]) ?? []
+      const eData = (tmpl.events_data as { name: string; split_mode: string }[]) ?? []
+      setTiltRatio(((tmpl.tilt_ratio as number) ?? 2.0).toFixed(1))
+      setManualMode((tmpl.manual_mode as boolean) ?? false)
+      const evtCount = eData.length || 1
+      setEvents(eData.length > 0 ? eData.map((e) => ({ name: e.name, totalAmount: '', splitMode: e.split_mode === 'equal' ? 'equal' : 'tilt' })) : [{ name: '1次会', totalAmount: '', splitMode: 'tilt' }])
+      const orgIdx = pData.findIndex((p) => p.is_organizer)
+      setOrganizerIdx(orgIdx >= 0 ? orgIdx : null)
+      setParticipants(pData.map((p) => ({ name: p.name, role: p.role, tenure_years: p.tenure_years != null ? String(p.tenure_years) : '', fixed_amount: '', manual_multiplier: String(p.manual_multiplier ?? 1.0), attendances: Array<boolean>(evtCount).fill(true) })))
+    } finally {
+      setInitialLoading(false)
+    }
+  }
+
+  const addEvent = () => {
+    const name = defaultEventName(events.length)
+    setEvents([...events, { name, totalAmount: '', splitMode: 'tilt' }])
+    setParticipants(participants.map((p) => ({ ...p, attendances: [...p.attendances, true] })))
+  }
+
+  const removeEvent = (eIdx: number) => {
+    setEvents(events.filter((_, i) => i !== eIdx))
+    setParticipants(participants.map((p) => ({ ...p, attendances: p.attendances.filter((_, i) => i !== eIdx) })))
+  }
+
+  const updateEvent = (eIdx: number, field: keyof EventState, value: string) => {
+    const next = [...events]
+    next[eIdx] = { ...next[eIdx], [field]: value } as EventState
+    setEvents(next)
+  }
+
+  const addParticipant = () => setParticipants([...participants, makeParticipant(events.length)])
+
+  const removeParticipant = (i: number) => {
+    if (participants.length <= 1) return
+    setParticipants(participants.filter((_, idx) => idx !== i))
+    if (organizerIdx === i) setOrganizerIdx(null)
+    else if (organizerIdx !== null && organizerIdx > i) setOrganizerIdx(organizerIdx - 1)
+    if (suggestions?.idx === i) setSuggestions(null)
+  }
+
+  const updateParticipant = (i: number, field: keyof ParticipantState, value: string | boolean[]) => {
+    const next = [...participants]
+    next[i] = { ...next[i], [field]: value }
+    setParticipants(next)
+  }
+
+  const updateAttendance = (pIdx: number, eIdx: number, value: boolean) => {
+    const next = [...participants]
+    const att = [...(next[pIdx].attendances ?? [])]
+    att[eIdx] = value
+    next[pIdx] = { ...next[pIdx], attendances: att }
+    setParticipants(next)
+  }
+
+  const handleNameChange = useCallback((i: number, value: string) => {
+    const next = [...participants]
+    next[i] = { ...next[i], name: value }
+    setParticipants(next)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    if (value.trim().length < 1) { setSuggestions(null); return }
+    debounceRef.current = setTimeout(async () => {
+      const list = await getSuggestions(value.trim())
+      setSuggestions(list.length > 0 ? { idx: i, list } : null)
+    }, 300)
+  }, [participants])
+
+  const applySuggestion = (i: number, s: Suggestion) => {
+    const next = [...participants]
+    next[i] = { ...next[i], name: s.name, role: s.role, tenure_years: s.tenure_years?.toString() ?? '' }
+    setParticipants(next)
+    setSuggestions(null)
+  }
+
+  const handleSubmit = async () => {
+    setError('')
+    if (!Number(events[0]?.totalAmount) || Number(events[0].totalAmount) <= 0) {
+      setError('1次会の総額を入力してください')
+      return
+    }
+    const validEntries = participants.map((p, idx) => ({ p, idx })).filter(({ p }) => p.name.trim() !== '')
+    if (validEntries.length < 1) {
+      setError('参加者を1人以上入力してください')
+      return
+    }
+    setLoading(true)
+    try {
+      const deviceId = await getDeviceId()
+      const input = {
+        event_date: eventDate.trim() || null,
+        tilt_ratio: parseFloat(tiltRatio) || 2.0,
+        manual_mode: manualMode,
+        device_id: isEdit ? undefined : deviceId,
+        events: events.map((ev, i) => ({
+          name: ev.name.trim() || `${i + 1}次会`,
+          total_amount: Number(ev.totalAmount) || 0,
+          sort_order: i,
+          split_mode: ev.splitMode ?? 'tilt',
+        })),
+        participants: validEntries.map(({ p, idx }) => ({
+          name: p.name.trim(),
+          role: p.role,
+          tenure_years: p.role === 'その他役職' && p.tenure_years ? Number(p.tenure_years) : null,
+          fixed_amount: p.fixed_amount ? Number(p.fixed_amount) : null,
+          is_organizer: idx === organizerIdx,
+          manual_multiplier: parseFloat(p.manual_multiplier) || 1.0,
+        })),
+        attendances: validEntries.map(({ p }) => events.map((_, eIdx) => p.attendances[eIdx] ?? true)),
+      }
+      if (isEdit && fromShareId) {
+        await updateRoom(fromShareId, input)
+        navigation.replace('Room', { shareId: fromShareId })
+      } else {
+        const newShareId = await createRoom(input)
+        navigation.replace('Room', { shareId: newShareId })
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : '保存に失敗しました')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (initialLoading) {
+    return <View style={styles.center}><ActivityIndicator size="large" color="#e97316" /></View>
+  }
+
+  return (
+    <>
+      <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        {/* イベント名 */}
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>飲み会・イベント名</Text>
+          <TextInput
+            style={styles.input}
+            value={eventDate}
+            onChangeText={setEventDate}
+            placeholder={`例：${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2,'0')}${String(new Date().getDate()).padStart(2,'0')} 部署飲み`}
+            placeholderTextColor="#9ca3af"
+          />
+        </View>
+
+        {/* 傾斜設定 */}
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>傾斜設定</Text>
+          <View style={styles.modeRow}>
+            <TouchableOpacity style={[styles.modeBtn, !manualMode && styles.modeBtnActive]} onPress={() => setManualMode(false)}>
+              <Text style={[styles.modeBtnLabel, !manualMode && styles.modeBtnLabelActive]}>自動</Text>
+              <Text style={[styles.modeBtnSub, !manualMode && styles.modeBtnSubActive]}>役職・年次から計算</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.modeBtn, manualMode && styles.modeBtnActive]} onPress={() => setManualMode(true)}>
+              <Text style={[styles.modeBtnLabel, manualMode && styles.modeBtnLabelActive]}>手動</Text>
+              <Text style={[styles.modeBtnSub, manualMode && styles.modeBtnSubActive]}>倍率を直接指定</Text>
+            </TouchableOpacity>
+          </View>
+          {!manualMode && (
+            <TouchableOpacity style={styles.selector} onPress={() => setTiltModalOpen(true)}>
+              <Text style={styles.selectorText}>{tiltRatio}倍{tiltRatio === '2.0' ? '（推奨）' : ''}</Text>
+              <Text style={styles.selectorArrow}>▼</Text>
+            </TouchableOpacity>
+          )}
+          {manualMode && <Text style={styles.hint}>各参加者の倍率は参加者カードで設定してください</Text>}
+        </View>
+
+        {/* 会カード */}
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>お会計</Text>
+          {events.map((ev, eIdx) => (
+            <View key={eIdx} style={styles.eventCard}>
+              <View style={styles.row}>
+                <TouchableOpacity style={styles.eventNameRow} onPress={() => setPresetModalIdx(eIdx)}>
+                  <TextInput
+                    style={[styles.input, styles.flex1]}
+                    value={ev.name}
+                    onChangeText={(v) => updateEvent(eIdx, 'name', v)}
+                    placeholder="例：1次会"
+                    placeholderTextColor="#9ca3af"
+                  />
+                  <Text style={styles.dropArrow}>▼</Text>
+                </TouchableOpacity>
+                {eIdx > 0 && (
+                  <TouchableOpacity onPress={() => removeEvent(eIdx)} style={styles.removeBtn}>
+                    <Text style={styles.removeBtnText}>✕</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              <View style={styles.amountRow}>
+                <TextInput
+                  style={[styles.input, styles.flex1]}
+                  value={ev.totalAmount}
+                  onChangeText={(v) => updateEvent(eIdx, 'totalAmount', v)}
+                  placeholder="例: 30000"
+                  placeholderTextColor="#9ca3af"
+                  keyboardType="numeric"
+                />
+                <Text style={styles.unit}>円</Text>
+              </View>
+              {eIdx === 0 && <Text style={styles.required}>※ 1次会は必須です</Text>}
+              <View style={styles.splitRow}>
+                <TouchableOpacity style={[styles.splitBtn, ev.splitMode !== 'equal' && styles.splitBtnTiltActive]} onPress={() => updateEvent(eIdx, 'splitMode', 'tilt')}>
+                  <Text style={[styles.splitBtnText, ev.splitMode !== 'equal' && styles.splitBtnTextActive]}>傾斜配分</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.splitBtn, ev.splitMode === 'equal' && styles.splitBtnEqualActive]} onPress={() => updateEvent(eIdx, 'splitMode', 'equal')}>
+                  <Text style={[styles.splitBtnText, ev.splitMode === 'equal' && styles.splitBtnEqualTextActive]}>均等割り</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))}
+          <TouchableOpacity style={styles.addBtn} onPress={addEvent}>
+            <Text style={styles.addBtnText}>＋ 会を追加</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* 参加者リスト */}
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>参加者</Text>
+          {participants.map((p, i) => (
+            <View key={i} style={[styles.participantCard, organizerIdx === i && styles.participantCardOrganizer]}>
+              {/* 名前行 */}
+              <View style={styles.nameRow}>
+                <View style={styles.flex1}>
+                  <TextInput
+                    style={styles.input}
+                    value={p.name}
+                    onChangeText={(v) => handleNameChange(i, v)}
+                    onBlur={() => setTimeout(() => { if (suggestions?.idx === i) setSuggestions(null) }, 200)}
+                    placeholder={`参加者${i + 1}の名前`}
+                    placeholderTextColor="#9ca3af"
+                  />
+                  {suggestions?.idx === i && suggestions.list.length > 0 && (
+                    <View style={styles.suggestionsBox}>
+                      {suggestions.list.map((s) => (
+                        <TouchableOpacity key={s.name} style={styles.suggestionItem} onPress={() => applySuggestion(i, s)}>
+                          <Text style={styles.suggestionName}>{s.name}</Text>
+                          <Text style={styles.suggestionSub}>{s.role}{s.tenure_years ? ` ${s.tenure_years}年目` : ''}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </View>
+                <TouchableOpacity style={[styles.organizerBtn, organizerIdx === i && styles.organizerBtnActive]} onPress={() => setOrganizerIdx(organizerIdx === i ? null : i)}>
+                  <Text style={styles.organizerBtnText}>{organizerIdx === i ? '👑' : '🎤'} 幹事</Text>
+                </TouchableOpacity>
+                {participants.length > 1 && (
+                  <TouchableOpacity onPress={() => removeParticipant(i)} style={styles.removeBtn}>
+                    <Text style={styles.removeBtnText}>✕</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* 役職 or 倍率 */}
+              {!manualMode ? (
+                <TouchableOpacity style={styles.selector} onPress={() => setRoleModalIdx(i)}>
+                  <Text style={styles.selectorText}>{p.role}{ROLE_EQUIVALENT_YEARS[p.role] ? `（${ROLE_EQUIVALENT_YEARS[p.role]}年換算）` : '（年次入力）'}</Text>
+                  <Text style={styles.selectorArrow}>▼</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity style={styles.selector} onPress={() => setMultiplierModalIdx(i)}>
+                  <Text style={styles.selectorText}>{p.manual_multiplier}倍</Text>
+                  <Text style={styles.selectorArrow}>▼</Text>
+                </TouchableOpacity>
+              )}
+
+              {/* 年次（その他役職時） */}
+              {!manualMode && p.role === 'その他役職' && (
+                <View style={styles.tenureRow}>
+                  <TextInput
+                    style={[styles.input, styles.tenureInput]}
+                    value={p.tenure_years}
+                    onChangeText={(v) => updateParticipant(i, 'tenure_years', v)}
+                    placeholder="年次"
+                    placeholderTextColor="#9ca3af"
+                    keyboardType="numeric"
+                  />
+                  <Text style={styles.unit}>年目</Text>
+                  <TextInput
+                    style={[styles.input, styles.flex1]}
+                    value={p.fixed_amount}
+                    onChangeText={(v) => updateParticipant(i, 'fixed_amount', v)}
+                    placeholder="固定額（省略可）"
+                    placeholderTextColor="#9ca3af"
+                    keyboardType="numeric"
+                  />
+                  <Text style={styles.unit}>円固定</Text>
+                </View>
+              )}
+              {(manualMode || p.role !== 'その他役職') && (
+                <View style={styles.tenureRow}>
+                  <TextInput
+                    style={[styles.input, styles.flex1]}
+                    value={p.fixed_amount}
+                    onChangeText={(v) => updateParticipant(i, 'fixed_amount', v)}
+                    placeholder="固定額（省略可）"
+                    placeholderTextColor="#9ca3af"
+                    keyboardType="numeric"
+                  />
+                  <Text style={styles.unit}>円固定</Text>
+                </View>
+              )}
+            </View>
+          ))}
+          <TouchableOpacity style={styles.addBtn} onPress={addParticipant}>
+            <Text style={styles.addBtnText}>＋ 参加者を追加</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* 出席管理（2会以上） */}
+        {events.length > 1 && (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>出席管理</Text>
+            <Text style={styles.hint}>各会への参加をチェックしてください</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View>
+                <View style={styles.tableRow}>
+                  <Text style={[styles.tableCell, styles.tableHeaderCell, styles.nameCell]}>名前</Text>
+                  {events.map((ev, eIdx) => (
+                    <Text key={eIdx} style={[styles.tableCell, styles.tableHeaderCell, styles.checkCell]}>{ev.name || `${eIdx + 1}次会`}</Text>
+                  ))}
+                </View>
+                {participants.map((p, pIdx) =>
+                  p.name ? (
+                    <View key={pIdx} style={styles.tableRow}>
+                      <Text style={[styles.tableCell, styles.nameCell]} numberOfLines={1}>{p.name}</Text>
+                      {events.map((_, eIdx) => (
+                        <View key={eIdx} style={[styles.tableCell, styles.checkCell, styles.checkCellCenter]}>
+                          <Switch
+                            value={p.attendances[eIdx] ?? true}
+                            onValueChange={(v) => updateAttendance(pIdx, eIdx, v)}
+                            trackColor={{ false: '#d1d5db', true: '#fb923c' }}
+                            thumbColor="#fff"
+                            style={styles.switch}
+                          />
+                        </View>
+                      ))}
+                    </View>
+                  ) : null
+                )}
+              </View>
+            </ScrollView>
+          </View>
+        )}
+
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+
+        <TouchableOpacity style={[styles.submitBtn, loading && styles.submitBtnDisabled]} onPress={handleSubmit} disabled={loading}>
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>精算内容を確定してURLを発行</Text>}
+        </TouchableOpacity>
+
+        <View style={{ height: 40 }} />
+      </ScrollView>
+
+      {/* 傾斜倍率モーダル */}
+      <Modal visible={tiltModalOpen} transparent animationType="slide" onRequestClose={() => setTiltModalOpen(false)}>
+        <TouchableOpacity style={styles.modalOverlay} onPress={() => setTiltModalOpen(false)} activeOpacity={1}>
+          <View style={styles.modalSheet}>
+            <Text style={styles.modalTitle}>傾斜倍率を選択</Text>
+            {[1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0].map((v) => (
+              <TouchableOpacity key={v} style={[styles.modalOption, tiltRatio === v.toFixed(1) && styles.modalOptionSelected]} onPress={() => { setTiltRatio(v.toFixed(1)); setTiltModalOpen(false) }}>
+                <Text style={[styles.modalOptionText, tiltRatio === v.toFixed(1) && styles.modalOptionTextSelected]}>{v.toFixed(1)}倍{v === 2.0 ? '（推奨）' : ''}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* 役職モーダル */}
+      <Modal visible={roleModalIdx !== null} transparent animationType="slide" onRequestClose={() => setRoleModalIdx(null)}>
+        <TouchableOpacity style={styles.modalOverlay} onPress={() => setRoleModalIdx(null)} activeOpacity={1}>
+          <View style={styles.modalSheet}>
+            <Text style={styles.modalTitle}>役職を選択</Text>
+            {ROLES.map((r) => {
+              const selected = roleModalIdx !== null && participants[roleModalIdx]?.role === r
+              return (
+                <TouchableOpacity key={r} style={[styles.modalOption, selected && styles.modalOptionSelected]} onPress={() => { if (roleModalIdx !== null) updateParticipant(roleModalIdx, 'role', r); setRoleModalIdx(null) }}>
+                  <Text style={[styles.modalOptionText, selected && styles.modalOptionTextSelected]}>{r}{ROLE_EQUIVALENT_YEARS[r] ? `（${ROLE_EQUIVALENT_YEARS[r]}年換算）` : '（年次入力）'}</Text>
+                </TouchableOpacity>
+              )
+            })}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* 倍率モーダル */}
+      <Modal visible={multiplierModalIdx !== null} transparent animationType="slide" onRequestClose={() => setMultiplierModalIdx(null)}>
+        <TouchableOpacity style={styles.modalOverlay} onPress={() => setMultiplierModalIdx(null)} activeOpacity={1}>
+          <View style={styles.modalSheet}>
+            <Text style={styles.modalTitle}>倍率を選択</Text>
+            {[1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0].map((v) => {
+              const selected = multiplierModalIdx !== null && participants[multiplierModalIdx]?.manual_multiplier === String(v)
+              return (
+                <TouchableOpacity key={v} style={[styles.modalOption, selected && styles.modalOptionSelected]} onPress={() => { if (multiplierModalIdx !== null) updateParticipant(multiplierModalIdx, 'manual_multiplier', String(v)); setMultiplierModalIdx(null) }}>
+                  <Text style={[styles.modalOptionText, selected && styles.modalOptionTextSelected]}>{v.toFixed(1)}倍</Text>
+                </TouchableOpacity>
+              )
+            })}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* プリセットモーダル */}
+      <Modal visible={presetModalIdx !== null} transparent animationType="slide" onRequestClose={() => setPresetModalIdx(null)}>
+        <TouchableOpacity style={styles.modalOverlay} onPress={() => setPresetModalIdx(null)} activeOpacity={1}>
+          <View style={styles.modalSheet}>
+            <Text style={styles.modalTitle}>項目名を選択</Text>
+            {EVENT_PRESETS.map((preset) => (
+              <TouchableOpacity key={preset} style={styles.modalOption} onPress={() => { if (presetModalIdx !== null) updateEvent(presetModalIdx, 'name', preset); setPresetModalIdx(null) }}>
+                <Text style={styles.modalOptionText}>{preset}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    </>
+  )
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#f5f5f5' },
+  content: { padding: 16 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
+  sectionTitle: { fontSize: 15, fontWeight: '700', color: '#1a1a2e', marginBottom: 12 },
+  input: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: '#111', backgroundColor: '#fff' },
+  flex1: { flex: 1 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  modeRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  modeBtn: { flex: 1, borderWidth: 2, borderColor: '#e5e7eb', borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
+  modeBtnActive: { borderColor: '#e97316', backgroundColor: '#e97316' },
+  modeBtnLabel: { fontSize: 14, fontWeight: '700', color: '#9ca3af' },
+  modeBtnLabelActive: { color: '#fff' },
+  modeBtnSub: { fontSize: 11, color: '#d1d5db', marginTop: 2 },
+  modeBtnSubActive: { color: 'rgba(255,255,255,0.8)' },
+  selector: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: '#fff' },
+  selectorText: { fontSize: 14, color: '#111', flex: 1 },
+  selectorArrow: { fontSize: 12, color: '#9ca3af', marginLeft: 8 },
+  hint: { fontSize: 12, color: '#9ca3af', marginTop: 4 },
+  eventCard: { borderWidth: 1, borderColor: '#fed7aa', borderRadius: 12, padding: 12, marginBottom: 10, backgroundColor: '#fff7ed' },
+  eventNameRow: { flex: 1, flexDirection: 'row', alignItems: 'center' },
+  dropArrow: { position: 'absolute', right: 10, color: '#9ca3af', fontSize: 12 },
+  removeBtn: { padding: 6 },
+  removeBtnText: { color: '#d1d5db', fontSize: 16 },
+  amountRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
+  unit: { fontSize: 13, color: '#6b7280', minWidth: 36 },
+  required: { fontSize: 11, color: '#fb923c', marginTop: 4 },
+  splitRow: { flexDirection: 'row', gap: 6, marginTop: 8 },
+  splitBtn: { flex: 1, borderWidth: 2, borderColor: '#e5e7eb', borderRadius: 8, paddingVertical: 6, alignItems: 'center' },
+  splitBtnTiltActive: { borderColor: '#e97316', backgroundColor: '#e97316' },
+  splitBtnEqualActive: { borderColor: '#3b82f6', backgroundColor: '#3b82f6' },
+  splitBtnText: { fontSize: 12, fontWeight: '600', color: '#9ca3af' },
+  splitBtnTextActive: { color: '#fff' },
+  splitBtnEqualTextActive: { color: '#fff' },
+  addBtn: { borderWidth: 2, borderStyle: 'dashed', borderColor: '#fed7aa', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
+  addBtnText: { color: '#fb923c', fontSize: 14 },
+  participantCard: { borderWidth: 2, borderColor: '#f3f4f6', borderRadius: 12, padding: 12, marginBottom: 10, backgroundColor: '#f9fafb' },
+  participantCardOrganizer: { borderColor: '#fb923c', backgroundColor: '#fff7ed' },
+  nameRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 8 },
+  organizerBtn: { borderWidth: 2, borderColor: '#e5e7eb', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 8, backgroundColor: '#fff' },
+  organizerBtnActive: { borderColor: '#fbbf24', backgroundColor: '#fbbf24' },
+  organizerBtnText: { fontSize: 12, fontWeight: '700', color: '#374151' },
+  tenureRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
+  tenureInput: { width: 64, textAlign: 'center' },
+  suggestionsBox: { position: 'absolute', top: 44, left: 0, right: 0, backgroundColor: '#fff', borderWidth: 1, borderColor: '#fed7aa', borderRadius: 10, zIndex: 100, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 8, elevation: 8 },
+  suggestionItem: { padding: 12, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  suggestionName: { fontSize: 14, fontWeight: '600', color: '#111' },
+  suggestionSub: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
+  tableRow: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  tableCell: { paddingVertical: 10, paddingHorizontal: 8, fontSize: 13, color: '#374151' },
+  tableHeaderCell: { fontWeight: '700', color: '#6b7280', fontSize: 12 },
+  nameCell: { width: 80 },
+  checkCell: { width: 70 },
+  checkCellCenter: { alignItems: 'center', justifyContent: 'center' },
+  switch: { transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] },
+  errorText: { color: '#dc2626', fontSize: 14, textAlign: 'center', marginBottom: 12 },
+  submitBtn: { backgroundColor: '#e97316', borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
+  submitBtnDisabled: { opacity: 0.6 },
+  submitBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  modalSheet: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 20, paddingBottom: 40 },
+  modalTitle: { fontSize: 16, fontWeight: '700', color: '#1a1a2e', textAlign: 'center', marginBottom: 12, paddingHorizontal: 20 },
+  modalOption: { paddingVertical: 14, paddingHorizontal: 24, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  modalOptionSelected: { backgroundColor: '#fff7ed' },
+  modalOptionText: { fontSize: 15, color: '#374151' },
+  modalOptionTextSelected: { color: '#e97316', fontWeight: '700' },
+})
