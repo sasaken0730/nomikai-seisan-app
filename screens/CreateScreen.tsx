@@ -214,19 +214,20 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
     setSuggestions(null)
   }
 
-  const handleDatePickerChange = (_event: DateTimePickerEvent, selectedDate?: Date) => {
-    if (selectedDate) setPickerDate(selectedDate)
-  }
-
-  const handleDateConfirm = () => {
-    const d = pickerDate
-    const yyyy = d.getFullYear()
-    const mm = String(d.getMonth() + 1).padStart(2, '0')
-    const dd = String(d.getDate()).padStart(2, '0')
-    const yyyymmdd = `${yyyy}${mm}${dd}`
-    const withoutDate = eventDate.replace(/^\d{8}\s*/, '').trim()
-    setEventDate(withoutDate ? `${yyyymmdd} ${withoutDate}` : `${yyyymmdd} `)
-    setShowDatePicker(false)
+  const handleDatePickerChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+    if (event.type === 'set' && selectedDate) {
+      const d = selectedDate
+      const yyyy = d.getFullYear()
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      const dd = String(d.getDate()).padStart(2, '0')
+      const yyyymmdd = `${yyyy}${mm}${dd}`
+      const withoutDate = eventDate.replace(/^\d{8}\s*/, '').trim()
+      setEventDate(withoutDate ? `${yyyymmdd} ${withoutDate}` : `${yyyymmdd} `)
+      setPickerDate(selectedDate)
+      setShowDatePicker(false)
+    } else if (event.type === 'dismissed') {
+      setShowDatePicker(false)
+    }
   }
 
   const handleSubmit = async () => {
@@ -595,27 +596,25 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
         </TouchableOpacity>
       </Modal>
 
-      {/* 日付ピッカーモーダル */}
-      <Modal visible={showDatePicker} transparent animationType="slide" onRequestClose={() => setShowDatePicker(false)}>
-        <TouchableOpacity style={styles.modalOverlay} onPress={() => setShowDatePicker(false)} activeOpacity={1}>
-          <View style={styles.datePickerSheet} onStartShouldSetResponder={() => true}>
+      {/* 日付ピッカーモーダル（インラインカレンダー） */}
+      <Modal visible={showDatePicker} transparent animationType="fade" onRequestClose={() => setShowDatePicker(false)}>
+        <TouchableOpacity style={styles.calendarOverlay} onPress={() => setShowDatePicker(false)} activeOpacity={1}>
+          <View style={styles.calendarCard} onStartShouldSetResponder={() => true}>
             <View style={styles.datePickerHeader}>
-              <TouchableOpacity onPress={() => setShowDatePicker(false)}>
-                <Text style={styles.datePickerCancel}>キャンセル</Text>
-              </TouchableOpacity>
               <Text style={styles.datePickerTitle}>📅 日付を選択</Text>
-              <TouchableOpacity onPress={handleDateConfirm}>
-                <Text style={styles.datePickerConfirm}>確定</Text>
+              <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                <Text style={styles.datePickerCancel}>✕</Text>
               </TouchableOpacity>
             </View>
             {Platform.OS === 'ios' && (
               <DateTimePicker
                 value={pickerDate}
                 mode="date"
-                display="spinner"
+                display="inline"
                 onChange={handleDatePickerChange}
                 locale="ja-JP"
-                style={styles.datePicker}
+                accentColor="#e97316"
+                themeVariant="light"
               />
             )}
           </View>
@@ -691,12 +690,11 @@ const styles = StyleSheet.create({
   eventDateRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   calendarBtn: { width: 44, height: 44, borderWidth: 2, borderColor: '#fed7aa', backgroundColor: '#fff7ed', borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   calendarBtnText: { fontSize: 20 },
-  datePickerSheet: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 40 },
-  datePickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  calendarOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 16 },
+  calendarCard: { backgroundColor: '#fff', borderRadius: 20, overflow: 'hidden', width: '100%' },
+  datePickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
   datePickerTitle: { fontSize: 15, fontWeight: '700', color: '#1a1a2e' },
-  datePickerCancel: { fontSize: 15, color: '#9ca3af' },
-  datePickerConfirm: { fontSize: 15, fontWeight: '700', color: '#e97316' },
-  datePicker: { height: 200, backgroundColor: '#fff' },
+  datePickerCancel: { fontSize: 18, color: '#9ca3af', paddingHorizontal: 4 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   modalSheet: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 20, paddingBottom: 40 },
   modalTitle: { fontSize: 16, fontWeight: '700', color: '#1a1a2e', textAlign: 'center', marginBottom: 12, paddingHorizontal: 20 },
