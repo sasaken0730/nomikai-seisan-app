@@ -11,6 +11,8 @@ import { getDeviceId } from '../lib/deviceId'
 
 type Unit = 500 | 1000
 
+const COMPARISON_GRADIENTS = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0] as const
+
 interface RoomData {
   id: string
   event_date: string | null
@@ -188,6 +190,14 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
 
   const sortedResults = [...results].sort((a, b) => b.payment - a.payment)
 
+  // 傾斜パターン比較（manualMode 時は傾斜倍率が効かないので非表示）
+  const comparisonResults = !manualMode
+    ? COMPARISON_GRADIENTS.reduce<Record<number, ReturnType<typeof applyRoundingPerEvent>>>((acc, g) => {
+        acc[g] = applyRoundingPerEvent(participants, events, unit, g, false)
+        return acc
+      }, {})
+    : null
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* ヘッダー */}
@@ -273,6 +283,63 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
                 ))}
               </View>
             </ScrollView>
+          </View>
+        </>
+      )}
+
+      {/* ⚖️ 傾斜パターン比較 */}
+      {comparisonResults && (
+        <>
+          <Text style={styles.resultSectionTitle}>⚖️ 傾斜パターン比較</Text>
+          <View style={styles.card}>
+            <Text style={styles.hint}>現在の設定（{gradient.toFixed(1)}倍）を基準に、他の傾斜パターンでの金額を比較します</Text>
+            <View style={[styles.compTable, { marginTop: 10 }]}>
+              {/* 固定名前列 */}
+              <View style={styles.compNameCol}>
+                <View style={styles.compHeaderCell}>
+                  <Text style={styles.compHeaderText}>名前</Text>
+                </View>
+                {sortedResults.map((r) => (
+                  <View key={r.id} style={styles.compNameDataCell}>
+                    <Text style={styles.compNameText} numberOfLines={1}>{r.name}</Text>
+                    {r.is_organizer && <Text style={styles.compOrgLabel}>幹事</Text>}
+                  </View>
+                ))}
+              </View>
+              {/* スクロール傾斜列 */}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} nestedScrollEnabled>
+                <View>
+                  <View style={styles.compHeaderRow}>
+                    {COMPARISON_GRADIENTS.map((g) => {
+                      const isCurrent = Math.abs(g - gradient) < 0.05
+                      return (
+                        <View key={g} style={[styles.compGradientHeaderCell, isCurrent && styles.compCurrentGradientHeaderCell]}>
+                          <Text style={[styles.compHeaderText, isCurrent && styles.compCurrentHeaderText]}>
+                            {g === 1.0 ? '均等' : `${g.toFixed(1)}倍`}
+                          </Text>
+                          {isCurrent && <Text style={styles.compCurrentLabel}>▼ 現在</Text>}
+                        </View>
+                      )
+                    })}
+                  </View>
+                  {sortedResults.map((r) => (
+                    <View key={r.id} style={styles.compDataRow}>
+                      {COMPARISON_GRADIENTS.map((g) => {
+                        const isCurrent = Math.abs(g - gradient) < 0.05
+                        const compResult = comparisonResults[g]?.find((rr) => rr.id === r.id)
+                        return (
+                          <View key={g} style={[styles.compCell, isCurrent && styles.compCurrentCell]}>
+                            <Text style={[styles.compCellText, isCurrent && styles.compCurrentCellText]}>
+                              {compResult != null ? `${compResult.payment.toLocaleString()}` : '—'}
+                            </Text>
+                          </View>
+                        )
+                      })}
+                    </View>
+                  ))}
+                </View>
+              </ScrollView>
+            </View>
           </View>
         </>
       )}
@@ -389,6 +456,24 @@ const styles = StyleSheet.create({
   tableNameCell: { width: 80 },
   tableAmountCell: { width: 80, textAlign: 'right' },
   tableTotalCell: { fontWeight: '700', color: '#e97316' },
+  // 傾斜パターン比較表
+  compTable: { flexDirection: 'row', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, overflow: 'hidden' },
+  compNameCol: { width: 84, borderRightWidth: 1, borderRightColor: '#e5e7eb', backgroundColor: '#f8fafc' },
+  compHeaderCell: { height: 48, justifyContent: 'center', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#e5e7eb', backgroundColor: '#f1f5f9', paddingHorizontal: 6 },
+  compNameDataCell: { height: 46, justifyContent: 'center', paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  compNameText: { fontSize: 12, fontWeight: '600', color: '#374151' },
+  compOrgLabel: { fontSize: 9, color: '#d97706', fontWeight: '700' },
+  compHeaderRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
+  compGradientHeaderCell: { width: 70, height: 48, justifyContent: 'center', alignItems: 'center', borderRightWidth: 1, borderRightColor: '#e5e7eb', backgroundColor: '#f1f5f9', paddingHorizontal: 4 },
+  compCurrentGradientHeaderCell: { backgroundColor: '#fff7ed', borderRightColor: '#fed7aa' },
+  compHeaderText: { fontSize: 11, fontWeight: '700', color: '#6b7280', textAlign: 'center' },
+  compCurrentHeaderText: { color: '#e97316' },
+  compCurrentLabel: { fontSize: 9, color: '#e97316', fontWeight: '600', textAlign: 'center', marginTop: 1 },
+  compDataRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  compCell: { width: 70, height: 46, justifyContent: 'center', alignItems: 'center', borderRightWidth: 1, borderRightColor: '#f3f4f6', paddingHorizontal: 4 },
+  compCurrentCell: { backgroundColor: '#fff7ed' },
+  compCellText: { fontSize: 12, fontWeight: '500', color: '#374151', textAlign: 'center' },
+  compCurrentCellText: { fontWeight: '700', color: '#e97316' },
   settlementCard: { backgroundColor: '#eff6ff', borderRadius: 16, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: '#bfdbfe' },
   settlementTitle: { fontSize: 15, fontWeight: '700', color: '#1e40af', marginBottom: 2 },
   settlementSub: { fontSize: 12, color: '#6b7280', marginBottom: 10 },

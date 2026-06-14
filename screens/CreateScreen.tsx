@@ -123,18 +123,23 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
       if (!tmpl) return
       const pData = (tmpl.participants_data as { name: string; role: string; tenure_years: number | null; is_organizer: boolean; manual_multiplier: number }[]) ?? []
       const eData = (tmpl.events_data as { name: string; split_mode: string; total_amount?: number; payer_participant_name?: string | null }[]) ?? []
+      console.log('[loadFromTemplate] 元データ:', JSON.stringify(eData.map((e) => ({ name: e.name, amount: e.total_amount, payer: e.payer_participant_name }))))
       setTiltRatio(((tmpl.tilt_ratio as number) ?? 2.0).toFixed(1))
       setManualMode((tmpl.manual_mode as boolean) ?? false)
       const evtCount = eData.length || 1
-      setEvents(eData.length > 0 ? eData.map((e) => {
-        const payerIdx = e.payer_participant_name ? pData.findIndex((p) => p.name === e.payer_participant_name) : -1
+      const newEvents: EventState[] = eData.length > 0 ? eData.map((e) => {
+        const payerIdx = e.payer_participant_name != null
+          ? pData.findIndex((p) => p.name === e.payer_participant_name)
+          : -1
         return {
           name: e.name,
-          totalAmount: e.total_amount ? String(e.total_amount) : '',
-          splitMode: e.split_mode === 'equal' ? 'equal' : 'tilt',
+          totalAmount: e.total_amount != null && e.total_amount > 0 ? String(e.total_amount) : '',
+          splitMode: e.split_mode === 'equal' ? 'equal' : 'tilt' as const,
           payerParticipantIdx: payerIdx >= 0 ? payerIdx : null,
         }
-      }) : [{ name: '1次会', totalAmount: '', splitMode: 'tilt', payerParticipantIdx: null }])
+      }) : [{ name: '1次会', totalAmount: '', splitMode: 'tilt' as const, payerParticipantIdx: null }]
+      console.log('[loadFromTemplate] セット後:', JSON.stringify(newEvents.map((e) => ({ name: e.name, totalAmount: e.totalAmount, payerIdx: e.payerParticipantIdx }))))
+      setEvents(newEvents)
       const orgIdx = pData.findIndex((p) => p.is_organizer)
       setOrganizerIdx(orgIdx >= 0 ? orgIdx : null)
       setParticipants(pData.map((p) => ({ name: p.name, role: p.role, tenure_years: p.tenure_years != null ? String(p.tenure_years) : '', fixed_amount: '', manual_multiplier: String(p.manual_multiplier ?? 1.0), attendances: Array<boolean>(evtCount).fill(true) })))
@@ -156,18 +161,25 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
         : { data: [] }
       const pData = rawParticipants ?? []
       const eData = rawEvents ?? []
+      console.log('[loadFromRoomCopy] 元データ 金額・立替:', JSON.stringify(eData.map((e) => ({ name: e.event_name, amount: e.total_amount, payerId: e.payer_participant_id }))))
+      const newEvents: EventState[] = eData.length > 0 ? eData.map((e) => {
+        const rawPayerId = e.payer_participant_id as string | null
+        const payerIdx = rawPayerId != null
+          ? pData.findIndex((p) => (p.id as string) === rawPayerId)
+          : -1
+        const rawAmount = e.total_amount as number | null
+        return {
+          name: e.event_name as string,
+          totalAmount: rawAmount != null && rawAmount > 0 ? String(rawAmount) : '',
+          splitMode: (e.split_mode as string) === 'equal' ? 'equal' : 'tilt' as const,
+          payerParticipantIdx: payerIdx >= 0 ? payerIdx : null,
+        }
+      }) : [{ name: '1次会', totalAmount: '', splitMode: 'tilt' as const, payerParticipantIdx: null }]
+      console.log('[loadFromRoomCopy] セット後 金額・立替:', JSON.stringify(newEvents.map((e) => ({ name: e.name, totalAmount: e.totalAmount, payerIdx: e.payerParticipantIdx }))))
       setTiltRatio(((room.tilt_ratio as number) ?? 2.0).toFixed(1))
       setManualMode((room.manual_mode as boolean) ?? false)
       setEventDate('')
-      setEvents(eData.length > 0 ? eData.map((e) => {
-        const payerIdx = pData.findIndex((p) => p.id === e.payer_participant_id)
-        return {
-          name: e.event_name as string,
-          totalAmount: e.total_amount ? String(e.total_amount as number) : '',
-          splitMode: (e.split_mode as string) === 'equal' ? 'equal' : 'tilt',
-          payerParticipantIdx: payerIdx >= 0 ? payerIdx : null,
-        }
-      }) : [{ name: '1次会', totalAmount: '', splitMode: 'tilt', payerParticipantIdx: null }])
+      setEvents(newEvents)
       const orgIdx = pData.findIndex((p) => p.is_organizer)
       setOrganizerIdx(orgIdx >= 0 ? orgIdx : null)
       setParticipants(pData.map((p, pIdx) => ({
