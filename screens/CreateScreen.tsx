@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, Switch, Alert, ActivityIndicator, Modal, Platform,
+  StyleSheet, Alert, ActivityIndicator, Modal, Platform, Pressable,
 } from 'react-native'
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker'
 import type { CreateScreenProps } from '../navigation/types'
@@ -294,244 +294,256 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
 
   return (
     <>
-      <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        {/* イベント名 */}
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>飲み会・イベント名</Text>
-          <View style={styles.eventDateRow}>
-            <TouchableOpacity style={styles.calendarBtn} onPress={() => setShowDatePicker(true)}>
-              <Text style={styles.calendarBtnText}>📅</Text>
-            </TouchableOpacity>
-            <TextInput
-              style={[styles.input, styles.flex1]}
-              value={eventDate}
-              onChangeText={setEventDate}
-              placeholder={`例：${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2,'0')}${String(new Date().getDate()).padStart(2,'0')} 部署飲み`}
-              placeholderTextColor="#9ca3af"
-            />
-          </View>
-        </View>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        onScrollBeginDrag={() => setSuggestions(null)}
+      >
+        <Pressable onPress={() => suggestions !== null && setSuggestions(null)}>
 
-        {/* 傾斜設定 */}
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>傾斜設定</Text>
-          <View style={styles.modeRow}>
-            <TouchableOpacity style={[styles.modeBtn, !manualMode && styles.modeBtnActive]} onPress={() => setManualMode(false)}>
-              <Text style={[styles.modeBtnLabel, !manualMode && styles.modeBtnLabelActive]}>自動</Text>
-              <Text style={[styles.modeBtnSub, !manualMode && styles.modeBtnSubActive]}>役職・年次から計算</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.modeBtn, manualMode && styles.modeBtnActive]} onPress={() => setManualMode(true)}>
-              <Text style={[styles.modeBtnLabel, manualMode && styles.modeBtnLabelActive]}>手動</Text>
-              <Text style={[styles.modeBtnSub, manualMode && styles.modeBtnSubActive]}>倍率を直接指定</Text>
-            </TouchableOpacity>
-          </View>
-          {!manualMode && (
-            <TouchableOpacity style={styles.selector} onPress={() => setTiltModalOpen(true)}>
-              <Text style={styles.selectorText}>{tiltRatio}倍{tiltRatio === '2.0' ? '（推奨）' : ''}</Text>
-              <Text style={styles.selectorArrow}>▼</Text>
-            </TouchableOpacity>
-          )}
-          {manualMode && <Text style={styles.hint}>各参加者の倍率は参加者カードで設定してください</Text>}
-        </View>
-
-        {/* 会カード */}
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>お会計</Text>
-          {events.map((ev, eIdx) => (
-            <View key={eIdx} style={styles.eventCard}>
-              <View style={styles.row}>
-                <TouchableOpacity style={styles.eventNameRow} onPress={() => setPresetModalIdx(eIdx)}>
-                  <TextInput
-                    style={[styles.input, styles.flex1]}
-                    value={ev.name}
-                    onChangeText={(v) => updateEvent(eIdx, 'name', v)}
-                    placeholder="例：1次会"
-                    placeholderTextColor="#9ca3af"
-                  />
-                  <Text style={styles.dropArrow}>▼</Text>
-                </TouchableOpacity>
-                {eIdx > 0 && (
-                  <TouchableOpacity onPress={() => removeEvent(eIdx)} style={styles.removeBtn}>
-                    <Text style={styles.removeBtnText}>✕</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-              <View style={styles.amountRow}>
-                <TextInput
-                  style={[styles.input, styles.flex1]}
-                  value={ev.totalAmount}
-                  onChangeText={(v) => updateEvent(eIdx, 'totalAmount', v)}
-                  placeholder="例: 30000"
-                  placeholderTextColor="#9ca3af"
-                  keyboardType="numeric"
-                />
-                <Text style={styles.unit}>円</Text>
-              </View>
-              {eIdx === 0 && <Text style={styles.required}>※ 1次会は必須です</Text>}
-              <View style={styles.splitRow}>
-                <TouchableOpacity style={[styles.splitBtn, ev.splitMode !== 'equal' && styles.splitBtnTiltActive]} onPress={() => updateEvent(eIdx, 'splitMode', 'tilt')}>
-                  <Text style={[styles.splitBtnText, ev.splitMode !== 'equal' && styles.splitBtnTextActive]}>傾斜配分</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.splitBtn, ev.splitMode === 'equal' && styles.splitBtnEqualActive]} onPress={() => updateEvent(eIdx, 'splitMode', 'equal')}>
-                  <Text style={[styles.splitBtnText, ev.splitMode === 'equal' && styles.splitBtnEqualTextActive]}>均等割り</Text>
-                </TouchableOpacity>
-              </View>
+          {/* イベント名 */}
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>飲み会・イベント名</Text>
+            <View style={styles.eventDateRow}>
+              <TouchableOpacity style={styles.calendarBtn} onPress={() => setShowDatePicker(true)}>
+                <Text style={styles.calendarBtnText}>📅</Text>
+              </TouchableOpacity>
+              <TextInput
+                style={[styles.input, styles.flex1]}
+                value={eventDate}
+                onChangeText={setEventDate}
+                placeholder={`例：${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2,'0')}${String(new Date().getDate()).padStart(2,'0')} 部署飲み`}
+                placeholderTextColor="#9ca3af"
+              />
             </View>
-          ))}
-          <TouchableOpacity style={styles.addBtn} onPress={addEvent}>
-            <Text style={styles.addBtnText}>＋ 会を追加</Text>
-          </TouchableOpacity>
-        </View>
+          </View>
 
-        {/* 参加者リスト */}
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>参加者</Text>
-          {participants.map((p, i) => (
-            <View key={i} style={[styles.participantCard, organizerIdx === i && styles.participantCardOrganizer]}>
-              {/* 名前行 */}
-              <View style={styles.nameRow}>
-                <View style={styles.flex1}>
-                  <TextInput
-                    style={styles.input}
-                    value={p.name}
-                    onChangeText={(v) => handleNameChange(i, v)}
-                    onBlur={() => setTimeout(() => { if (suggestions?.idx === i) setSuggestions(null) }, 200)}
-                    placeholder={`参加者${i + 1}の名前`}
-                    placeholderTextColor="#9ca3af"
-                  />
-                  {suggestions?.idx === i && suggestions.list.length > 0 && (
-                    <View style={styles.suggestionsBox}>
-                      {suggestions.list.map((s) => (
-                        <TouchableOpacity key={s.name} style={styles.suggestionItem} onPress={() => applySuggestion(i, s)}>
-                          <Text style={styles.suggestionName}>{s.name}</Text>
-                          <Text style={styles.suggestionSub}>{s.role}{s.tenure_years ? ` ${s.tenure_years}年目` : ''}</Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
+          {/* 傾斜設定 */}
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>傾斜設定</Text>
+            <View style={styles.modeRow}>
+              <TouchableOpacity style={[styles.modeBtn, !manualMode && styles.modeBtnActive]} onPress={() => setManualMode(false)}>
+                <Text style={[styles.modeBtnLabel, !manualMode && styles.modeBtnLabelActive]}>自動</Text>
+                <Text style={[styles.modeBtnSub, !manualMode && styles.modeBtnSubActive]}>役職・年次から計算</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.modeBtn, manualMode && styles.modeBtnActive]} onPress={() => setManualMode(true)}>
+                <Text style={[styles.modeBtnLabel, manualMode && styles.modeBtnLabelActive]}>手動</Text>
+                <Text style={[styles.modeBtnSub, manualMode && styles.modeBtnSubActive]}>倍率を直接指定</Text>
+              </TouchableOpacity>
+            </View>
+            {!manualMode && (
+              <TouchableOpacity style={styles.selector} onPress={() => setTiltModalOpen(true)}>
+                <Text style={styles.selectorText}>{tiltRatio}倍{tiltRatio === '2.0' ? '（推奨）' : ''}</Text>
+                <Text style={styles.selectorArrow}>▼</Text>
+              </TouchableOpacity>
+            )}
+            {manualMode && <Text style={styles.hint}>各参加者の倍率は参加者カードで設定してください</Text>}
+          </View>
+
+          {/* 会カード */}
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>お会計</Text>
+            {events.map((ev, eIdx) => (
+              <View key={eIdx} style={styles.eventCard}>
+                <View style={styles.row}>
+                  <TouchableOpacity style={styles.eventNameRow} onPress={() => setPresetModalIdx(eIdx)}>
+                    <TextInput
+                      style={[styles.input, styles.flex1]}
+                      value={ev.name}
+                      onChangeText={(v) => updateEvent(eIdx, 'name', v)}
+                      placeholder="例：1次会"
+                      placeholderTextColor="#9ca3af"
+                    />
+                    <Text style={styles.dropArrow}>▼</Text>
+                  </TouchableOpacity>
+                  {eIdx > 0 && (
+                    <TouchableOpacity onPress={() => removeEvent(eIdx)} style={styles.removeBtn}>
+                      <Text style={styles.removeBtnText}>✕</Text>
+                    </TouchableOpacity>
                   )}
                 </View>
-                <TouchableOpacity style={[styles.organizerBtn, organizerIdx === i && styles.organizerBtnActive]} onPress={() => handleSetOrganizer(organizerIdx === i ? null : i)}>
-                  <Text style={styles.organizerBtnText}>{organizerIdx === i ? '👑' : '🎤'} 幹事</Text>
-                </TouchableOpacity>
-                {participants.length > 1 && (
-                  <TouchableOpacity onPress={() => removeParticipant(i)} style={styles.removeBtn}>
-                    <Text style={styles.removeBtnText}>✕</Text>
+                <View style={styles.amountRow}>
+                  <TextInput
+                    style={[styles.input, styles.flex1]}
+                    value={ev.totalAmount}
+                    onChangeText={(v) => updateEvent(eIdx, 'totalAmount', v)}
+                    placeholder="例: 30000"
+                    placeholderTextColor="#9ca3af"
+                    keyboardType="numeric"
+                  />
+                  <Text style={styles.unit}>円</Text>
+                </View>
+                {eIdx === 0 && <Text style={styles.required}>※ 1次会は必須です</Text>}
+                <View style={styles.splitRow}>
+                  <TouchableOpacity style={[styles.splitBtn, ev.splitMode !== 'equal' && styles.splitBtnTiltActive]} onPress={() => updateEvent(eIdx, 'splitMode', 'tilt')}>
+                    <Text style={[styles.splitBtnText, ev.splitMode !== 'equal' && styles.splitBtnTextActive]}>傾斜配分</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.splitBtn, ev.splitMode === 'equal' && styles.splitBtnEqualActive]} onPress={() => updateEvent(eIdx, 'splitMode', 'equal')}>
+                    <Text style={[styles.splitBtnText, ev.splitMode === 'equal' && styles.splitBtnEqualTextActive]}>均等割り</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+            <TouchableOpacity style={styles.addBtn} onPress={addEvent}>
+              <Text style={styles.addBtnText}>＋ 会を追加</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* 参加者リスト */}
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>参加者</Text>
+            {participants.map((p, i) => (
+              <View key={i} style={[styles.participantCard, organizerIdx === i && styles.participantCardOrganizer]}>
+                {/* 名前行 */}
+                <View style={styles.nameRow}>
+                  <View style={styles.flex1}>
+                    <TextInput
+                      style={styles.input}
+                      value={p.name}
+                      onChangeText={(v) => handleNameChange(i, v)}
+                      onBlur={() => setTimeout(() => { if (suggestions?.idx === i) setSuggestions(null) }, 200)}
+                      placeholder={`参加者${i + 1}の名前`}
+                      placeholderTextColor="#9ca3af"
+                    />
+                    {suggestions?.idx === i && suggestions.list.length > 0 && (
+                      <View style={styles.suggestionsBox}>
+                        {suggestions.list.map((s) => (
+                          <TouchableOpacity key={s.name} style={styles.suggestionItem} onPress={() => applySuggestion(i, s)}>
+                            <Text style={styles.suggestionName}>{s.name}</Text>
+                            <Text style={styles.suggestionSub}>{s.role}{s.tenure_years ? ` ${s.tenure_years}年目` : ''}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                  <TouchableOpacity style={[styles.organizerBtn, organizerIdx === i && styles.organizerBtnActive]} onPress={() => handleSetOrganizer(organizerIdx === i ? null : i)}>
+                    <Text style={styles.organizerBtnText}>{organizerIdx === i ? '👑' : '🎤'} 幹事</Text>
+                  </TouchableOpacity>
+                  {participants.length > 1 && (
+                    <TouchableOpacity onPress={() => removeParticipant(i)} style={styles.removeBtn}>
+                      <Text style={styles.removeBtnText}>✕</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                {/* 役職 or 倍率 */}
+                {!manualMode ? (
+                  <TouchableOpacity style={styles.selector} onPress={() => setRoleModalIdx(i)}>
+                    <Text style={styles.selectorText}>{p.role}{ROLE_EQUIVALENT_YEARS[p.role] ? `（${ROLE_EQUIVALENT_YEARS[p.role]}年換算）` : '（年次入力）'}</Text>
+                    <Text style={styles.selectorArrow}>▼</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity style={styles.selector} onPress={() => setMultiplierModalIdx(i)}>
+                    <Text style={styles.selectorText}>{p.manual_multiplier}倍</Text>
+                    <Text style={styles.selectorArrow}>▼</Text>
                   </TouchableOpacity>
                 )}
-              </View>
 
-              {/* 役職 or 倍率 */}
-              {!manualMode ? (
-                <TouchableOpacity style={styles.selector} onPress={() => setRoleModalIdx(i)}>
-                  <Text style={styles.selectorText}>{p.role}{ROLE_EQUIVALENT_YEARS[p.role] ? `（${ROLE_EQUIVALENT_YEARS[p.role]}年換算）` : '（年次入力）'}</Text>
-                  <Text style={styles.selectorArrow}>▼</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity style={styles.selector} onPress={() => setMultiplierModalIdx(i)}>
-                  <Text style={styles.selectorText}>{p.manual_multiplier}倍</Text>
-                  <Text style={styles.selectorArrow}>▼</Text>
-                </TouchableOpacity>
-              )}
-
-              {/* 年次（その他役職時） */}
-              {!manualMode && p.role === 'その他役職' && (
-                <View style={styles.tenureRow}>
-                  <TextInput
-                    style={[styles.input, styles.tenureInput]}
-                    value={p.tenure_years}
-                    onChangeText={(v) => updateParticipant(i, 'tenure_years', v)}
-                    placeholder="年次"
-                    placeholderTextColor="#9ca3af"
-                    keyboardType="numeric"
-                  />
-                  <Text style={styles.unit}>年目</Text>
-                  <TextInput
-                    style={[styles.input, styles.flex1]}
-                    value={p.fixed_amount}
-                    onChangeText={(v) => updateParticipant(i, 'fixed_amount', v)}
-                    placeholder="固定額（省略可）"
-                    placeholderTextColor="#9ca3af"
-                    keyboardType="numeric"
-                  />
-                  <Text style={styles.unit}>円固定</Text>
-                </View>
-              )}
-              {(manualMode || p.role !== 'その他役職') && (
-                <View style={styles.tenureRow}>
-                  <TextInput
-                    style={[styles.input, styles.flex1]}
-                    value={p.fixed_amount}
-                    onChangeText={(v) => updateParticipant(i, 'fixed_amount', v)}
-                    placeholder="固定額（省略可）"
-                    placeholderTextColor="#9ca3af"
-                    keyboardType="numeric"
-                  />
-                  <Text style={styles.unit}>円固定</Text>
-                </View>
-              )}
-            </View>
-          ))}
-          <TouchableOpacity style={styles.addBtn} onPress={addParticipant}>
-            <Text style={styles.addBtnText}>＋ 参加者を追加</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* 出席管理・立替者 */}
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>出席管理・立替者</Text>
-          <Text style={styles.hint}>✓：出席　💳：立替者（1会につき1人）</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View>
-              <View style={styles.tableRow}>
-                <Text style={[styles.tableCell, styles.tableHeaderCell, styles.nameCell]}>名前</Text>
-                {events.map((ev, eIdx) => (
-                  <Text key={eIdx} style={[styles.tableCell, styles.tableHeaderCell, styles.checkCell]}>{ev.name || `${eIdx + 1}次会`}</Text>
-                ))}
-              </View>
-              {participants.map((p, pIdx) =>
-                p.name ? (
-                  <View key={pIdx} style={styles.tableRow}>
-                    <Text style={[styles.tableCell, styles.nameCell]} numberOfLines={1}>{p.name}</Text>
-                    {events.map((ev, eIdx) => {
-                      const isPayer = ev.payerParticipantIdx === pIdx
-                      return (
-                        <View key={eIdx} style={[styles.tableCell, styles.checkCell, styles.checkCellCenter]}>
-                          {events.length > 1 && (
-                            <Switch
-                              value={p.attendances[eIdx] ?? true}
-                              onValueChange={(v) => updateAttendance(pIdx, eIdx, v)}
-                              trackColor={{ false: '#d1d5db', true: '#fb923c' }}
-                              thumbColor="#fff"
-                              style={styles.switch}
-                            />
-                          )}
-                          <TouchableOpacity
-                            style={[styles.payerBtn, isPayer && styles.payerBtnActive]}
-                            onPress={() => {
-                              const next = [...events]
-                              next[eIdx] = { ...next[eIdx], payerParticipantIdx: isPayer ? null : pIdx }
-                              setEvents(next)
-                            }}
-                          >
-                            <Text style={styles.payerBtnText}>💳</Text>
-                          </TouchableOpacity>
-                        </View>
-                      )
-                    })}
+                {/* 年次（その他役職時） */}
+                {!manualMode && p.role === 'その他役職' && (
+                  <View style={styles.tenureRow}>
+                    <TextInput
+                      style={[styles.input, styles.tenureInput]}
+                      value={p.tenure_years}
+                      onChangeText={(v) => updateParticipant(i, 'tenure_years', v)}
+                      placeholder="年次"
+                      placeholderTextColor="#9ca3af"
+                      keyboardType="numeric"
+                    />
+                    <Text style={styles.unit}>年目</Text>
+                    <TextInput
+                      style={[styles.input, styles.flex1]}
+                      value={p.fixed_amount}
+                      onChangeText={(v) => updateParticipant(i, 'fixed_amount', v)}
+                      placeholder="固定額（省略可）"
+                      placeholderTextColor="#9ca3af"
+                      keyboardType="numeric"
+                    />
+                    <Text style={styles.unit}>円固定</Text>
                   </View>
-                ) : null
-              )}
-            </View>
-          </ScrollView>
-        </View>
+                )}
+                {(manualMode || p.role !== 'その他役職') && (
+                  <View style={styles.tenureRow}>
+                    <TextInput
+                      style={[styles.input, styles.flex1]}
+                      value={p.fixed_amount}
+                      onChangeText={(v) => updateParticipant(i, 'fixed_amount', v)}
+                      placeholder="固定額（省略可）"
+                      placeholderTextColor="#9ca3af"
+                      keyboardType="numeric"
+                    />
+                    <Text style={styles.unit}>円固定</Text>
+                  </View>
+                )}
+              </View>
+            ))}
+            <TouchableOpacity style={styles.addBtn} onPress={addParticipant}>
+              <Text style={styles.addBtnText}>＋ 参加者を追加</Text>
+            </TouchableOpacity>
+          </View>
 
-        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {/* 出席管理・立替者（チェックボックス式） */}
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>出席管理・立替者</Text>
+            <Text style={styles.hint}>タップで出席切替　💳 タップで立替者設定（1会につき1人）</Text>
+            {events.map((ev, eIdx) => (
+              <View key={eIdx} style={eIdx > 0 ? styles.attendanceEventSection : {}}>
+                {events.length > 1 && (
+                  <Text style={styles.attendanceEventLabel}>{ev.name || `${eIdx + 1}次会`}</Text>
+                )}
+                {participants.some((p) => p.name) ? (
+                  participants.map((p, pIdx) => {
+                    if (!p.name) return null
+                    const isAttending = p.attendances[eIdx] ?? true
+                    const isPayer = ev.payerParticipantIdx === pIdx
+                    return (
+                      <Pressable
+                        key={pIdx}
+                        style={styles.attendanceRow}
+                        onPress={() => updateAttendance(pIdx, eIdx, !isAttending)}
+                      >
+                        <View style={[styles.checkBox, isAttending && styles.checkBoxChecked]}>
+                          {isAttending && <Text style={styles.checkMark}>✓</Text>}
+                        </View>
+                        <Text
+                          style={[styles.attendanceName, !isAttending && styles.attendanceNameAbsent]}
+                          numberOfLines={1}
+                        >
+                          {p.name}
+                        </Text>
+                        {pIdx === organizerIdx && (
+                          <Text style={styles.organizerMark}>👑</Text>
+                        )}
+                        <TouchableOpacity
+                          style={[styles.payerBtnSmall, isPayer && styles.payerBtnSmallActive]}
+                          onPress={() => {
+                            const next = [...events]
+                            next[eIdx] = { ...next[eIdx], payerParticipantIdx: isPayer ? null : pIdx }
+                            setEvents(next)
+                          }}
+                          hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
+                        >
+                          <Text style={styles.payerBtnSmallText}>💳</Text>
+                        </TouchableOpacity>
+                      </Pressable>
+                    )
+                  })
+                ) : (
+                  <Text style={[styles.hint, { marginTop: 8 }]}>参加者を入力すると表示されます</Text>
+                )}
+              </View>
+            ))}
+          </View>
 
-        <TouchableOpacity style={[styles.submitBtn, loading && styles.submitBtnDisabled]} onPress={handleSubmit} disabled={loading}>
-          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>精算内容を確定してURLを発行</Text>}
-        </TouchableOpacity>
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-        <View style={{ height: 40 }} />
+          <TouchableOpacity style={[styles.submitBtn, loading && styles.submitBtnDisabled]} onPress={handleSubmit} disabled={loading}>
+            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>精算内容を確定してURLを発行</Text>}
+          </TouchableOpacity>
+
+          <View style={{ height: 40 }} />
+        </Pressable>
       </ScrollView>
 
       {/* 傾斜倍率モーダル */}
@@ -615,6 +627,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                 locale="ja-JP"
                 accentColor="#e97316"
                 themeVariant="light"
+                style={{ alignSelf: 'center', width: '100%' }}
               />
             )}
           </View>
@@ -673,16 +686,19 @@ const styles = StyleSheet.create({
   suggestionItem: { padding: 12, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
   suggestionName: { fontSize: 14, fontWeight: '600', color: '#111' },
   suggestionSub: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
-  tableRow: { flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
-  tableCell: { paddingVertical: 10, paddingHorizontal: 8, fontSize: 13, color: '#374151' },
-  tableHeaderCell: { fontWeight: '700', color: '#6b7280', fontSize: 12 },
-  nameCell: { width: 80 },
-  checkCell: { width: 70 },
-  checkCellCenter: { alignItems: 'center', justifyContent: 'center' },
-  switch: { transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] },
-  payerBtn: { padding: 4, borderRadius: 6, opacity: 0.4 },
-  payerBtnActive: { opacity: 1, backgroundColor: '#fef3c7' },
-  payerBtnText: { fontSize: 14 },
+  // 出席管理（チェックボックス式）
+  attendanceEventSection: { marginTop: 14 },
+  attendanceEventLabel: { fontSize: 13, fontWeight: '700', color: '#e97316', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#fed7aa', marginBottom: 2 },
+  attendanceRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f3f4f6', gap: 10 },
+  checkBox: { width: 22, height: 22, borderRadius: 5, borderWidth: 2, borderColor: '#d1d5db', backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  checkBoxChecked: { borderColor: '#e97316', backgroundColor: '#e97316' },
+  checkMark: { color: '#fff', fontSize: 13, fontWeight: '700', lineHeight: 16 },
+  attendanceName: { flex: 1, fontSize: 14, color: '#111', fontWeight: '500' },
+  attendanceNameAbsent: { color: '#9ca3af', textDecorationLine: 'line-through' },
+  organizerMark: { fontSize: 14 },
+  payerBtnSmall: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#e5e7eb', opacity: 0.45 },
+  payerBtnSmallActive: { borderColor: '#f59e0b', backgroundColor: '#fef3c7', opacity: 1 },
+  payerBtnSmallText: { fontSize: 14 },
   errorText: { color: '#dc2626', fontSize: 14, textAlign: 'center', marginBottom: 12 },
   submitBtn: { backgroundColor: '#e97316', borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
   submitBtnDisabled: { opacity: 0.6 },
@@ -690,9 +706,9 @@ const styles = StyleSheet.create({
   eventDateRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   calendarBtn: { width: 44, height: 44, borderWidth: 2, borderColor: '#fed7aa', backgroundColor: '#fff7ed', borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   calendarBtnText: { fontSize: 20 },
-  calendarOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 16 },
-  calendarCard: { backgroundColor: '#fff', borderRadius: 20, overflow: 'hidden', width: '100%' },
-  datePickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  calendarOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  calendarCard: { backgroundColor: '#fff', borderRadius: 20, overflow: 'hidden', width: '100%', alignItems: 'center' },
+  datePickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#f3f4f6', width: '100%' },
   datePickerTitle: { fontSize: 15, fontWeight: '700', color: '#1a1a2e' },
   datePickerCancel: { fontSize: 18, color: '#9ca3af', paddingHorizontal: 4 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },

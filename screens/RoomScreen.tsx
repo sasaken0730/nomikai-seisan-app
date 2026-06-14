@@ -9,7 +9,7 @@ import { applyRoundingPerEvent, type ParticipantInput, type EventInput } from '.
 import { updateRoomSaved, saveTemplate } from '../lib/actions'
 import { getDeviceId } from '../lib/deviceId'
 
-type Unit = 1 | 500 | 1000
+type Unit = 500 | 1000
 
 interface RoomData {
   id: string
@@ -58,7 +58,7 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [savingTemplate, setSavingTemplate] = useState(false)
-  const [unit, setUnit] = useState<Unit>(500)
+  const [unit, setUnit] = useState<Unit>(1000)
   const [activeTab, setActiveTab] = useState<'result' | 'detail'>('result')
 
   useEffect(() => {
@@ -220,9 +220,9 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
       <View style={styles.card}>
         <Text style={styles.cardLabel}>丸め単位</Text>
         <View style={styles.unitRow}>
-          {([1, 500, 1000] as Unit[]).map((u) => (
+          {([500, 1000] as Unit[]).map((u) => (
             <TouchableOpacity key={u} style={[styles.unitBtn, unit === u && styles.unitBtnActive]} onPress={() => setUnit(u)}>
-              <Text style={[styles.unitBtnText, unit === u && styles.unitBtnTextActive]}>{u === 1 ? '1円' : `${u}円`}</Text>
+              <Text style={[styles.unitBtnText, unit === u && styles.unitBtnTextActive]}>{u}円</Text>
             </TouchableOpacity>
           ))}
         </View>
