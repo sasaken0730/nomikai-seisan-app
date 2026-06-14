@@ -196,6 +196,30 @@ export async function getSuggestions(query: string): Promise<Suggestion[]> {
     }))
 }
 
+export async function getRecentMembers(): Promise<Suggestion[]> {
+  const { data } = await supabase
+    .from('nomikai_seisan_participants')
+    .select('name, role, tenure_years, created_at')
+    .order('created_at', { ascending: false })
+    .limit(200)
+
+  if (!data) return []
+
+  const seen = new Set<string>()
+  return data
+    .filter((p) => {
+      if (seen.has(p.name as string)) return false
+      seen.add(p.name as string)
+      return true
+    })
+    .slice(0, 30)
+    .map((p) => ({
+      name: p.name as string,
+      role: p.role as string,
+      tenure_years: p.tenure_years as number | null,
+    }))
+}
+
 export interface TemplateParticipant {
   name: string
   role: string

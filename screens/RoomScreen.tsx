@@ -59,7 +59,6 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
   const [saving, setSaving] = useState(false)
   const [savingTemplate, setSavingTemplate] = useState(false)
   const [unit, setUnit] = useState<Unit>(1000)
-  const [activeTab, setActiveTab] = useState<'result' | 'detail'>('result')
 
   useEffect(() => {
     loadRoom()
@@ -228,65 +227,53 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
         </View>
       </View>
 
-      {/* タブ */}
-      <View style={styles.tabRow}>
-        <TouchableOpacity style={[styles.tab, activeTab === 'result' && styles.tabActive]} onPress={() => setActiveTab('result')}>
-          <Text style={[styles.tabText, activeTab === 'result' && styles.tabTextActive]}>精算金額</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.tab, activeTab === 'detail' && styles.tabActive]} onPress={() => setActiveTab('detail')}>
-          <Text style={[styles.tabText, activeTab === 'detail' && styles.tabTextActive]}>内訳</Text>
-        </TouchableOpacity>
+      {/* 💰 精算金額 */}
+      <Text style={styles.resultSectionTitle}>💰 精算金額</Text>
+      <View style={styles.card}>
+        {sortedResults.map((r, idx) => (
+          <View key={r.id} style={[styles.resultRow, idx < sortedResults.length - 1 && styles.resultRowBorder]}>
+            <View style={styles.resultLeft}>
+              {r.is_organizer && <Text style={styles.organizerBadge}>幹事</Text>}
+              <Text style={styles.resultName}>{r.name}</Text>
+              <Text style={styles.resultRole}>{r.role}</Text>
+            </View>
+            <View style={styles.resultRight}>
+              <Text style={styles.resultAmount}>{r.payment.toLocaleString()}<Text style={styles.resultUnit}>円</Text></Text>
+              {Math.abs(r.payment - r.rawPayment) > 0.5 && (
+                <Text style={styles.resultRaw}>（本来 {Math.round(r.rawPayment).toLocaleString()}円）</Text>
+              )}
+            </View>
+          </View>
+        ))}
       </View>
 
-      {activeTab === 'result' && (
-        <View style={styles.card}>
-          {sortedResults.map((r, idx) => (
-            <View key={r.id} style={[styles.resultRow, idx < sortedResults.length - 1 && styles.resultRowBorder]}>
-              <View style={styles.resultLeft}>
-                {r.is_organizer && <Text style={styles.organizerBadge}>幹事</Text>}
-                <Text style={styles.resultName}>{r.name}</Text>
-                <Text style={styles.resultRole}>{r.role}</Text>
-              </View>
-              <View style={styles.resultRight}>
-                <Text style={styles.resultAmount}>{r.payment.toLocaleString()}<Text style={styles.resultUnit}>円</Text></Text>
-                {Math.abs(r.payment - r.rawPayment) > 0.5 && (
-                  <Text style={styles.resultRaw}>（本来 {Math.round(r.rawPayment).toLocaleString()}円）</Text>
-                )}
-              </View>
-            </View>
-          ))}
-        </View>
-      )}
-
-      {activeTab === 'detail' && events.length > 1 && (
-        <View style={styles.card}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            <View>
-              <View style={styles.tableRow}>
-                <Text style={[styles.tableCell, styles.tableHeaderCell, styles.tableNameCell]}>名前</Text>
-                {events.map((e) => (
-                  <Text key={e.id} style={[styles.tableCell, styles.tableHeaderCell, styles.tableAmountCell]}>{e.name}</Text>
-                ))}
-                <Text style={[styles.tableCell, styles.tableHeaderCell, styles.tableAmountCell]}>合計</Text>
-              </View>
-              {results.map((r) => (
-                <View key={r.id} style={styles.tableRow}>
-                  <Text style={[styles.tableCell, styles.tableNameCell]} numberOfLines={1}>{r.name}</Text>
-                  {r.perEventPayment.map((amt, idx) => (
-                    <Text key={idx} style={[styles.tableCell, styles.tableAmountCell]}>{amt != null ? amt.toLocaleString() : '—'}</Text>
+      {/* 📊 内訳 */}
+      {events.length > 1 && (
+        <>
+          <Text style={styles.resultSectionTitle}>📊 内訳</Text>
+          <View style={styles.card}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View>
+                <View style={styles.tableRow}>
+                  <Text style={[styles.tableCell, styles.tableHeaderCell, styles.tableNameCell]}>名前</Text>
+                  {events.map((e) => (
+                    <Text key={e.id} style={[styles.tableCell, styles.tableHeaderCell, styles.tableAmountCell]}>{e.name}</Text>
                   ))}
-                  <Text style={[styles.tableCell, styles.tableAmountCell, styles.tableTotalCell]}>{r.payment.toLocaleString()}</Text>
+                  <Text style={[styles.tableCell, styles.tableHeaderCell, styles.tableAmountCell]}>合計</Text>
                 </View>
-              ))}
-            </View>
-          </ScrollView>
-        </View>
-      )}
-
-      {activeTab === 'detail' && events.length === 1 && (
-        <View style={styles.card}>
-          <Text style={styles.hint}>イベントが1つの場合は内訳表示はありません</Text>
-        </View>
+                {results.map((r) => (
+                  <View key={r.id} style={styles.tableRow}>
+                    <Text style={[styles.tableCell, styles.tableNameCell]} numberOfLines={1}>{r.name}</Text>
+                    {r.perEventPayment.map((amt, idx) => (
+                      <Text key={idx} style={[styles.tableCell, styles.tableAmountCell]}>{amt != null ? amt.toLocaleString() : '—'}</Text>
+                    ))}
+                    <Text style={[styles.tableCell, styles.tableAmountCell, styles.tableTotalCell]}>{r.payment.toLocaleString()}</Text>
+                  </View>
+                ))}
+              </View>
+            </ScrollView>
+          </View>
+        </>
       )}
 
       {/* 支払い調整（立替者が設定されている場合のみ） */}
@@ -384,11 +371,7 @@ const styles = StyleSheet.create({
   unitBtnActive: { borderColor: '#e97316', backgroundColor: '#e97316' },
   unitBtnText: { fontSize: 14, fontWeight: '600', color: '#9ca3af' },
   unitBtnTextActive: { color: '#fff' },
-  tabRow: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 12, marginBottom: 14, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1 },
-  tab: { flex: 1, paddingVertical: 12, alignItems: 'center' },
-  tabActive: { backgroundColor: '#e97316' },
-  tabText: { fontSize: 14, fontWeight: '600', color: '#9ca3af' },
-  tabTextActive: { color: '#fff' },
+  resultSectionTitle: { fontSize: 14, fontWeight: '700', color: '#374151', marginBottom: 8, paddingHorizontal: 4 },
   resultRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, justifyContent: 'space-between' },
   resultRowBorder: { borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
   resultLeft: { flex: 1 },

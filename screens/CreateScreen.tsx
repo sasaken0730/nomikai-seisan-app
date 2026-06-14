@@ -6,7 +6,7 @@ import {
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker'
 import type { CreateScreenProps } from '../navigation/types'
 import { ROLES, ROLE_EQUIVALENT_YEARS } from '../lib/calculations'
-import { createRoom, updateRoom, getSuggestions, type Suggestion } from '../lib/actions'
+import { createRoom, updateRoom, getSuggestions, getRecentMembers, type Suggestion } from '../lib/actions'
 import { getDeviceId } from '../lib/deviceId'
 import { supabase } from '../lib/supabase'
 
@@ -63,6 +63,8 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
 
   const [suggestions, setSuggestions] = useState<{ idx: number; list: Suggestion[] } | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [memberPickerIdx, setMemberPickerIdx] = useState<number | null>(null)
+  const [memberPickerList, setMemberPickerList] = useState<Suggestion[]>([])
   const [presetModalIdx, setPresetModalIdx] = useState<number | null>(null)
   const [tiltModalOpen, setTiltModalOpen] = useState(false)
   const [multiplierModalIdx, setMultiplierModalIdx] = useState<number | null>(null)
@@ -398,14 +400,26 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                 {/* 名前行 */}
                 <View style={styles.nameRow}>
                   <View style={styles.flex1}>
-                    <TextInput
-                      style={styles.input}
-                      value={p.name}
-                      onChangeText={(v) => handleNameChange(i, v)}
-                      onBlur={() => setTimeout(() => { if (suggestions?.idx === i) setSuggestions(null) }, 200)}
-                      placeholder={`参加者${i + 1}の名前`}
-                      placeholderTextColor="#9ca3af"
-                    />
+                    <View style={styles.nameInputRow}>
+                      <TextInput
+                        style={[styles.input, styles.flex1]}
+                        value={p.name}
+                        onChangeText={(v) => handleNameChange(i, v)}
+                        onBlur={() => setTimeout(() => { if (suggestions?.idx === i) setSuggestions(null) }, 200)}
+                        placeholder={`参加者${i + 1}の名前`}
+                        placeholderTextColor="#9ca3af"
+                      />
+                      <TouchableOpacity
+                        style={styles.memberPickerBtn}
+                        onPress={async () => {
+                          const list = await getRecentMembers()
+                          setMemberPickerList(list)
+                          setMemberPickerIdx(i)
+                        }}
+                      >
+                        <Text style={styles.memberPickerBtnText}>👥</Text>
+                      </TouchableOpacity>
+                    </View>
                     {suggestions?.idx === i && suggestions.list.length > 0 && (
                       <View style={styles.suggestionsBox}>
                         {suggestions.list.map((s) => (
@@ -483,57 +497,76 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
             </TouchableOpacity>
           </View>
 
-          {/* 出席管理・立替者（チェックボックス式） */}
+          {/* 出席管理・立替者（マトリクス表） */}
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>出席管理・立替者</Text>
-            <Text style={styles.hint}>タップで出席切替　💳 タップで立替者設定（1会につき1人）</Text>
-            {events.map((ev, eIdx) => (
-              <View key={eIdx} style={eIdx > 0 ? styles.attendanceEventSection : {}}>
-                {events.length > 1 && (
-                  <Text style={styles.attendanceEventLabel}>{ev.name || `${eIdx + 1}次会`}</Text>
-                )}
-                {participants.some((p) => p.name) ? (
-                  participants.map((p, pIdx) => {
+            <Text style={styles.hint}>セルタップで出席切替　💳 タップで立替者設定（1会につき1人）</Text>
+            {participants.some((p) => p.name) ? (
+              <View style={styles.matrixTable}>
+                {/* 固定名前列 */}
+                <View style={styles.matrixNameCol}>
+                  <View style={styles.matrixHeaderCell}>
+                    <Text style={styles.matrixHeaderText}>メンバー</Text>
+                  </View>
+                  {participants.map((p, pIdx) => {
                     if (!p.name) return null
-                    const isAttending = p.attendances[eIdx] ?? true
-                    const isPayer = ev.payerParticipantIdx === pIdx
                     return (
-                      <Pressable
-                        key={pIdx}
-                        style={styles.attendanceRow}
-                        onPress={() => updateAttendance(pIdx, eIdx, !isAttending)}
-                      >
-                        <View style={[styles.checkBox, isAttending && styles.checkBoxChecked]}>
-                          {isAttending && <Text style={styles.checkMark}>✓</Text>}
-                        </View>
-                        <Text
-                          style={[styles.attendanceName, !isAttending && styles.attendanceNameAbsent]}
-                          numberOfLines={1}
-                        >
-                          {p.name}
-                        </Text>
-                        {pIdx === organizerIdx && (
-                          <Text style={styles.organizerMark}>👑</Text>
-                        )}
-                        <TouchableOpacity
-                          style={[styles.payerBtnSmall, isPayer && styles.payerBtnSmallActive]}
-                          onPress={() => {
-                            const next = [...events]
-                            next[eIdx] = { ...next[eIdx], payerParticipantIdx: isPayer ? null : pIdx }
-                            setEvents(next)
-                          }}
-                          hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
-                        >
-                          <Text style={styles.payerBtnSmallText}>💳</Text>
-                        </TouchableOpacity>
-                      </Pressable>
+                      <View key={pIdx} style={styles.matrixNameDataCell}>
+                        <Text style={styles.matrixNameText} numberOfLines={1}>{p.name}</Text>
+                        {pIdx === organizerIdx && <Text style={styles.matrixOrgMark}>👑</Text>}
+                      </View>
                     )
-                  })
-                ) : (
-                  <Text style={[styles.hint, { marginTop: 8 }]}>参加者を入力すると表示されます</Text>
-                )}
+                  })}
+                </View>
+                {/* イベント列（横スクロール） */}
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} nestedScrollEnabled>
+                  <View>
+                    <View style={styles.matrixHeaderRow}>
+                      {events.map((ev, eIdx) => (
+                        <View key={eIdx} style={styles.matrixEventHeaderCell}>
+                          <Text style={styles.matrixHeaderText} numberOfLines={2}>{ev.name || `${eIdx + 1}次会`}</Text>
+                        </View>
+                      ))}
+                    </View>
+                    {participants.map((p, pIdx) => {
+                      if (!p.name) return null
+                      return (
+                        <View key={pIdx} style={styles.matrixDataRow}>
+                          {events.map((ev, eIdx) => {
+                            const isAttending = p.attendances[eIdx] ?? true
+                            const isPayer = ev.payerParticipantIdx === pIdx
+                            return (
+                              <Pressable
+                                key={eIdx}
+                                style={styles.matrixCell}
+                                onPress={() => updateAttendance(pIdx, eIdx, !isAttending)}
+                              >
+                                <View style={[styles.matrixCheckBox, isAttending && styles.matrixCheckBoxChecked]}>
+                                  {isAttending && <Text style={styles.matrixCheckMark}>✓</Text>}
+                                </View>
+                                <TouchableOpacity
+                                  style={[styles.matrixPayerBtn, isPayer && styles.matrixPayerBtnActive]}
+                                  onPress={() => {
+                                    const next = [...events]
+                                    next[eIdx] = { ...next[eIdx], payerParticipantIdx: isPayer ? null : pIdx }
+                                    setEvents(next)
+                                  }}
+                                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                                >
+                                  <Text style={styles.matrixPayerBtnText}>💳</Text>
+                                </TouchableOpacity>
+                              </Pressable>
+                            )
+                          })}
+                        </View>
+                      )
+                    })}
+                  </View>
+                </ScrollView>
               </View>
-            ))}
+            ) : (
+              <Text style={[styles.hint, { marginTop: 8 }]}>参加者を入力すると表示されます</Text>
+            )}
           </View>
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -604,6 +637,34 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                 <Text style={styles.modalOptionText}>{preset}</Text>
               </TouchableOpacity>
             ))}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* メンバー選択モーダル */}
+      <Modal visible={memberPickerIdx !== null} transparent animationType="slide" onRequestClose={() => setMemberPickerIdx(null)}>
+        <TouchableOpacity style={styles.modalOverlay} onPress={() => setMemberPickerIdx(null)} activeOpacity={1}>
+          <View style={styles.modalSheet}>
+            <Text style={styles.modalTitle}>過去のメンバーから選択</Text>
+            {memberPickerList.length === 0 ? (
+              <Text style={[styles.hint, { textAlign: 'center', paddingVertical: 20 }]}>過去のメンバーがいません</Text>
+            ) : (
+              <ScrollView>
+                {memberPickerList.map((s) => (
+                  <TouchableOpacity
+                    key={s.name}
+                    style={styles.modalOption}
+                    onPress={() => {
+                      if (memberPickerIdx !== null) applySuggestion(memberPickerIdx, s)
+                      setMemberPickerIdx(null)
+                    }}
+                  >
+                    <Text style={styles.modalOptionText}>{s.name}</Text>
+                    <Text style={styles.memberPickerSub}>{s.role}{s.tenure_years ? ` ${s.tenure_years}年目` : ''}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
           </View>
         </TouchableOpacity>
       </Modal>
@@ -686,19 +747,29 @@ const styles = StyleSheet.create({
   suggestionItem: { padding: 12, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
   suggestionName: { fontSize: 14, fontWeight: '600', color: '#111' },
   suggestionSub: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
-  // 出席管理（チェックボックス式）
-  attendanceEventSection: { marginTop: 14 },
-  attendanceEventLabel: { fontSize: 13, fontWeight: '700', color: '#e97316', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#fed7aa', marginBottom: 2 },
-  attendanceRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f3f4f6', gap: 10 },
-  checkBox: { width: 22, height: 22, borderRadius: 5, borderWidth: 2, borderColor: '#d1d5db', backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  checkBoxChecked: { borderColor: '#e97316', backgroundColor: '#e97316' },
-  checkMark: { color: '#fff', fontSize: 13, fontWeight: '700', lineHeight: 16 },
-  attendanceName: { flex: 1, fontSize: 14, color: '#111', fontWeight: '500' },
-  attendanceNameAbsent: { color: '#9ca3af', textDecorationLine: 'line-through' },
-  organizerMark: { fontSize: 14 },
-  payerBtnSmall: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1, borderColor: '#e5e7eb', opacity: 0.45 },
-  payerBtnSmallActive: { borderColor: '#f59e0b', backgroundColor: '#fef3c7', opacity: 1 },
-  payerBtnSmallText: { fontSize: 14 },
+  // 名前入力行（👥ボタン付き）
+  nameInputRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  memberPickerBtn: { width: 38, height: 38, borderRadius: 8, borderWidth: 1, borderColor: '#e5e7eb', backgroundColor: '#f9fafb', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  memberPickerBtnText: { fontSize: 16 },
+  memberPickerSub: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
+  // 出席管理（マトリクス表）
+  matrixTable: { flexDirection: 'row', marginTop: 10, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, overflow: 'hidden' },
+  matrixNameCol: { width: 100, borderRightWidth: 1, borderRightColor: '#e5e7eb' },
+  matrixHeaderCell: { height: 40, backgroundColor: '#f3f4f6', justifyContent: 'center', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#e5e7eb', paddingHorizontal: 8 },
+  matrixNameDataCell: { height: 52, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, gap: 4, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  matrixHeaderRow: { flexDirection: 'row', height: 40, backgroundColor: '#f3f4f6', borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
+  matrixEventHeaderCell: { width: 80, height: 40, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4, borderRightWidth: 1, borderRightColor: '#e5e7eb' },
+  matrixHeaderText: { fontSize: 11, fontWeight: '700', color: '#6b7280', textAlign: 'center' },
+  matrixNameText: { flex: 1, fontSize: 13, fontWeight: '500', color: '#111' },
+  matrixOrgMark: { fontSize: 12 },
+  matrixDataRow: { flexDirection: 'row', height: 52, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  matrixCell: { width: 80, height: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderRightWidth: 1, borderRightColor: '#f3f4f6' },
+  matrixCheckBox: { width: 22, height: 22, borderRadius: 5, borderWidth: 2, borderColor: '#d1d5db', backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  matrixCheckBoxChecked: { borderColor: '#e97316', backgroundColor: '#e97316' },
+  matrixCheckMark: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  matrixPayerBtn: { paddingHorizontal: 3, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: '#e5e7eb', opacity: 0.4 },
+  matrixPayerBtnActive: { borderColor: '#f59e0b', backgroundColor: '#fef3c7', opacity: 1 },
+  matrixPayerBtnText: { fontSize: 12 },
   errorText: { color: '#dc2626', fontSize: 14, textAlign: 'center', marginBottom: 12 },
   submitBtn: { backgroundColor: '#e97316', borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
   submitBtnDisabled: { opacity: 0.6 },
