@@ -97,9 +97,11 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
       const eData = rawEvents ?? []
       setTiltRatio(((room.tilt_ratio as number) ?? 2.0).toFixed(1))
       setManualMode((room.manual_mode as boolean) ?? false)
+      setEventDate((room.event_date as string | null) ?? '')
       setEvents(eData.length > 0 ? eData.map((e) => {
+        const rawAmt = e.total_amount as number | null
         const payerIdx = pData.findIndex((p) => p.id === e.payer_participant_id)
-        return { name: e.event_name as string, totalAmount: '', splitMode: (e.split_mode as string) === 'equal' ? 'equal' : 'tilt', payerParticipantIdx: payerIdx >= 0 ? payerIdx : null }
+        return { name: e.event_name as string, totalAmount: rawAmt != null && rawAmt > 0 ? String(rawAmt) : '', splitMode: (e.split_mode as string) === 'equal' ? 'equal' : 'tilt', payerParticipantIdx: payerIdx >= 0 ? payerIdx : null }
       }) : [{ name: '1次会', totalAmount: '', splitMode: 'tilt', payerParticipantIdx: null }])
       const orgIdx = pData.findIndex((p) => p.is_organizer)
       setOrganizerIdx(orgIdx >= 0 ? orgIdx : null)
@@ -107,7 +109,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
         name: p.name as string,
         role: p.role as string,
         tenure_years: p.tenure_years != null ? String(p.tenure_years) : '',
-        fixed_amount: '',
+        fixed_amount: p.fixed_amount != null ? String(p.fixed_amount) : '',
         manual_multiplier: String(p.manual_multiplier ?? '1.0'),
         attendances: eData.map((e) => (rawAttendances ?? []).some((a) => a.event_id === e.id && a.participant_id === pData[pIdx].id)),
       })))

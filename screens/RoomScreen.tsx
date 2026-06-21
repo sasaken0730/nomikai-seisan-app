@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useLayoutEffect } from 'react'
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Share,
   ActivityIndicator, Alert, Platform,
@@ -70,10 +70,24 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
   const [saving, setSaving] = useState(false)
   const [savingTemplate, setSavingTemplate] = useState(false)
   const [unit, setUnit] = useState<Unit>(1000)
+  const [selectedGradient, setSelectedGradient] = useState<number | null>(null)
 
   useEffect(() => {
     loadRoom()
   }, [shareId])
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerLeft: () => (
+        <TouchableOpacity
+          onPress={() => navigation.navigate('Edit', { shareId })}
+          style={{ paddingHorizontal: 8, paddingVertical: 4 }}
+        >
+          <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>← 編集に戻る</Text>
+        </TouchableOpacity>
+      ),
+    })
+  }, [navigation, shareId])
 
   async function loadRoom() {
     setLoading(true)
@@ -193,7 +207,7 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
     return <View style={styles.center}><Text style={styles.emptyText}>データが見つかりません</Text></View>
   }
 
-  const gradient = room.tilt_ratio
+  const gradient = selectedGradient ?? room.tilt_ratio
   const manualMode = room.manual_mode
   const results = applyRoundingPerEvent(participants, events, unit, gradient, manualMode)
   const grandTotal = events.reduce((s, e) => s + e.amount, 0)
@@ -217,7 +231,9 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
         {room.event_date && <Text style={styles.headerSub}>📅 {room.event_date}</Text>}
         <Text style={styles.headerSub}>参加者 {participants.length}名</Text>
         <View style={styles.headerBadge}>
-          <Text style={styles.headerBadgeText}>⚖️ 傾斜 {gradient.toFixed(1)}倍</Text>
+          <Text style={styles.headerBadgeText}>
+            ⚖️ 傾斜 {gradient.toFixed(1)}倍{selectedGradient !== null && Math.abs(selectedGradient - room.tilt_ratio) > 0.05 ? ' ★仮' : ''}
+          </Text>
         </View>
       </View>
 
@@ -307,7 +323,18 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
         <>
           <Text style={styles.resultSectionTitle}>⚖️ 傾斜パターン比較</Text>
           <View style={styles.card}>
-            <Text style={styles.hint}>現在の設定（{gradient.toFixed(1)}倍）を基準に、他の傾斜パターンでの金額を比較します</Text>
+            <View style={styles.compHintRow}>
+              <Text style={[styles.hint, { flex: 1, textAlign: 'left' }]}>
+                {selectedGradient !== null && Math.abs(selectedGradient - room.tilt_ratio) > 0.05
+                  ? `${selectedGradient.toFixed(1)}倍で表示中`
+                  : '列タップで倍率を切替・上段も即時更新'}
+              </Text>
+              {selectedGradient !== null && Math.abs(selectedGradient - room.tilt_ratio) > 0.05 && (
+                <TouchableOpacity onPress={() => setSelectedGradient(null)} style={styles.resetGradBtn}>
+                  <Text style={styles.resetGradBtnText}>↩ {room.tilt_ratio.toFixed(1)}倍に戻す</Text>
+                </TouchableOpacity>
+              )}
+            </View>
             <View style={[styles.compTable, { marginTop: 10 }]}>
               {/* 固定名前列 */}
               <View style={styles.compNameCol}>
@@ -328,13 +355,22 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
                   <View style={styles.compHeaderRow}>
                     {COMPARISON_GRADIENTS.map((g) => {
                       const isCurrent = Math.abs(g - gradient) < 0.05
+                      const isDefault = Math.abs(g - room.tilt_ratio) < 0.05
                       return (
-                        <View key={g} style={[styles.compGradientHeaderCell, isCurrent && styles.compCurrentGradientHeaderCell]}>
+                        <TouchableOpacity
+                          key={g}
+                          style={[styles.compGradientHeaderCell, isCurrent && styles.compCurrentGradientHeaderCell]}
+                          onPress={() => {
+                            const alreadySelected = selectedGradient !== null && Math.abs(g - selectedGradient) < 0.05
+                            setSelectedGradient(alreadySelected || isDefault ? null : g)
+                          }}
+                          activeOpacity={0.7}
+                        >
                           <Text style={[styles.compHeaderText, isCurrent && styles.compCurrentHeaderText]}>
                             {g === 1.0 ? '均等' : `${g.toFixed(1)}倍`}
                           </Text>
-                          {isCurrent && <Text style={styles.compCurrentLabel}>▼ 現在</Text>}
-                        </View>
+                          {isCurrent && <Text style={styles.compCurrentLabel}>{isDefault ? '▼ 現在' : '▼ 選択中'}</Text>}
+                        </TouchableOpacity>
                       )
                     })}
                   </View>
@@ -522,4 +558,7 @@ const styles = StyleSheet.create({
   newBtn: { borderWidth: 2, borderColor: '#fed7aa', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginBottom: 14 },
   newBtnText: { color: '#e97316', fontSize: 15, fontWeight: '700' },
   hint: { fontSize: 13, color: '#9ca3af', textAlign: 'center' },
+  compHintRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 0 },
+  resetGradBtn: { backgroundColor: '#f1f5f9', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: '#e2e8f0' },
+  resetGradBtnText: { fontSize: 11, color: '#64748b', fontWeight: '600' },
 })
