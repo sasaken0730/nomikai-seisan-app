@@ -222,14 +222,36 @@ export function applyRoundingPerEvent(
       const budgetInUnits = Math.floor(gradientPool / unit) * unit
       // 追加配分すべき単位数
       const extraUnits = Math.round((budgetInUnits - floorsSum) / unit)
-      // 小数部（unit未満）が大きい順に追加単位を配分
-      const sortedByFrac = rawAmounts
-        .map((a, i) => ({ i, frac: a - Math.floor(a / unit) * unit }))
-        .sort((a, b) => b.frac - a.frac)
+
       rounded = [...floored]
-      for (let k = 0; k < extraUnits && k < sortedByFrac.length; k++) {
-        rounded[sortedByFrac[k].i] += unit
+
+      if (extraUnits > 0) {
+        // 同ウェイトグループ単位で丸め上げを適用し、同条件メンバー間の金額差を防ぐ
+        // （個人単位のタイブレークは配列順依存になるため、グループ全員を同時に扱う）
+        const weightGroupMap = new Map<number, { indices: number[]; frac: number }>()
+        rawAmounts.forEach((a, i) => {
+          const key = weights[i]
+          if (!weightGroupMap.has(key)) {
+            weightGroupMap.set(key, { indices: [], frac: a - Math.floor(a / unit) * unit })
+          }
+          weightGroupMap.get(key)!.indices.push(i)
+        })
+        const sortedGroups = [...weightGroupMap.values()].sort((a, b) => b.frac - a.frac)
+        let rem = extraUnits
+        for (const group of sortedGroups) {
+          if (rem <= 0) break
+          if (rem >= group.indices.length) {
+            // グループ全員に +unit（同条件は必ず同額）
+            group.indices.forEach(i => { rounded[i] += unit })
+            rem -= group.indices.length
+          } else {
+            // グループを全員カバーできない端数は absorber に集約
+            rounded[absorberIdx] += rem * unit
+            rem = 0
+          }
+        }
       }
+
       // unit未満の真の端数のみ幹事が吸収
       const residual = Math.floor(gradientPool) - budgetInUnits
       if (residual !== 0) rounded[absorberIdx] += residual
