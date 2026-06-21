@@ -226,6 +226,7 @@ export interface TemplateParticipant {
   tenure_years: number | null
   is_organizer: boolean
   manual_multiplier: number
+  attendances?: boolean[]
 }
 
 export interface TemplateEvent {
@@ -290,6 +291,26 @@ export async function getTemplates(deviceId: string): Promise<TemplateSummary[]>
 
 export async function deleteTemplate(id: string): Promise<void> {
   const { error } = await supabase.from('nomikai_seisan_templates').delete().eq('id', id)
+  if (error) throw new Error(error.message)
+}
+
+export async function updateTemplate(id: string, input: {
+  templateName: string
+  tiltRatio: number
+  manualMode: boolean
+  participantsData: TemplateParticipant[]
+  eventsData: TemplateEvent[]
+}): Promise<void> {
+  const { error } = await supabase
+    .from('nomikai_seisan_templates')
+    .update({
+      template_name: input.templateName,
+      tilt_ratio: input.tiltRatio,
+      manual_mode: input.manualMode,
+      participants_data: input.participantsData,
+      events_data: input.eventsData,
+    })
+    .eq('id', id)
   if (error) throw new Error(error.message)
 }
 

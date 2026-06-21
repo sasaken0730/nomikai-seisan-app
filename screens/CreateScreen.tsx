@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, Alert, ActivityIndicator, Modal, Platform, Pressable,
@@ -6,7 +6,7 @@ import {
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker'
 import type { CreateScreenProps } from '../navigation/types'
 import { ROLES, ROLE_EQUIVALENT_YEARS } from '../lib/calculations'
-import { createRoom, updateRoom, getSuggestions, getRecentMembers, type Suggestion } from '../lib/actions'
+import { createRoom, updateRoom, saveTemplate, updateTemplate, deleteTemplate, getSuggestions, getRecentMembers, type Suggestion, type TemplateParticipant, type TemplateEvent } from '../lib/actions'
 import { getDeviceId } from '../lib/deviceId'
 import { supabase } from '../lib/supabase'
 
@@ -45,9 +45,11 @@ function defaultEventName(currentCount: number): string {
 }
 
 export default function CreateScreen({ navigation, route }: CreateScreenProps) {
-  const { fromShareId, templateId, copyFromShareId } = route.params ?? {}
+  const { fromShareId, templateId, copyFromShareId, templateEditId } = route.params ?? {}
   const isEdit = !!fromShareId
+  const isTemplateEdit = !!templateEditId
 
+  const [templateName, setTemplateName] = useState('')
   const [eventDate, setEventDate] = useState('')
   const [tiltRatio, setTiltRatio] = useState('2.0')
   const [manualMode, setManualMode] = useState(false)
@@ -79,8 +81,18 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
       loadFromTemplate(templateId)
     } else if (copyFromShareId) {
       loadFromRoomCopy(copyFromShareId)
+    } else if (templateEditId) {
+      loadForTemplateEdit(templateEditId)
     }
-  }, [fromShareId, templateId, copyFromShareId])
+  }, [fromShareId, templateId, copyFromShareId, templateEditId])
+
+  useLayoutEffect(() => {
+    if (isTemplateEdit) {
+      navigation.setOptions({ title: 'テンプレートを編集' })
+    } else if (isEdit) {
+      navigation.setOptions({ title: '精算を編集' })
+    }
+  }, [isTemplateEdit, isEdit, navigation])
 
   async function loadFromRoom(shareId: string) {
     setInitialLoading(true)
@@ -209,6 +221,139 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
     } finally {
       setInitialLoading(false)
     }
+  }
+
+  async function loadForTemplateEdit(tmplId: string) {
+    setInitialLoading(true)
+    try {
+      const { data: tmpl } = await supabase.from('nomikai_seisan_templates').select('*').eq('id', tmplId).single()
+      if (!tmpl) return
+      const pData = (tmpl.participants_data as TemplateParticipant[]) ?? []
+      const eData = (tmpl.events_data as TemplateEvent[]) ?? []
+      setTemplateName(tmpl.template_name as string ?? '')
+      setTiltRatio(((tmpl.tilt_ratio as number) ?? 2.0).toFixed(1))
+      setManualMode((tmpl.manual_mode as boolean) ?? false)
+      const evtCount = eData.length || 1
+      const orgIdx = pData.findIndex((p) => p.is_organizer)
+      const newEvents: EventState[] = eData.length > 0 ? eData.map((e) => {
+        const payerIdx = e.payer_participant_name != null
+          ? pData.findIndex((p) => p.name === e.payer_participant_name)
+          : -1
+        return {
+          name: e.name,
+          totalAmount: e.total_amount != null && e.total_amount > 0 ? String(e.total_amount) : '',
+          splitMode: e.split_mode === 'equal' ? 'equal' : 'tilt' as const,
+          payerParticipantIdx: payerIdx >= 0 ? payerIdx : (orgIdx >= 0 ? orgIdx : null),
+        }
+      }) : [{ name: '1次会', totalAmount: '', splitMode: 'tilt' as const, payerParticipantIdx: orgIdx >= 0 ? orgIdx : null }]
+      setEvents(newEvents)
+      setOrganizerIdx(orgIdx >= 0 ? orgIdx : null)
+      setParticipants(pData.map((p) => ({
+        name: p.name,
+        role: p.role,
+        tenure_years: p.tenure_years != null ? String(p.tenure_years) : '',
+        fixed_amount: '',
+        manual_multiplier: String(p.manual_multiplier ?? 1.0),
+        attendances: p.attendances ?? Array<boolean>(evtCount).fill(true),
+      })))
+    } finally {
+      setInitialLoading(false)
+    }
+  }
+
+  function buildTemplateData() {
+    const validEntries = participants.map((p, idx) => ({ p, idx })).filter(({ p }) => p.name.trim() !== '')
+    const participantsData: TemplateParticipant[] = validEntries.map(({ p, idx }) => ({
+      name: p.name.trim(),
+      role: p.role,
+      tenure_years: p.role === 'その他役職' && p.tenure_years ? Number(p.tenure_years) : null,
+      is_organizer: idx === organizerIdx,
+      manual_multiplier: parseFloat(p.manual_multiplier) || 1.0,
+      attendances: events.map((_, eIdx) => p.attendances[eIdx] ?? true),
+    }))
+    const eventsData: TemplateEvent[] = events.map((ev, i) => {
+      const rawIdx = ev.payerParticipantIdx ?? null
+      const payerName = rawIdx !== null && participants[rawIdx]?.name.trim()
+        ? participants[rawIdx].name.trim()
+        : null
+      return {
+        name: ev.name.trim() || `${i + 1}次会`,
+        total_amount: Number(ev.totalAmount) || 0,
+        split_mode: ev.splitMode ?? 'tilt',
+        payer_participant_name: payerName,
+      }
+    })
+    return { participantsData, eventsData, validEntries }
+  }
+
+  const handleSaveTemplateEdit = async () => {
+    if (!templateEditId) return
+    setError('')
+    if (!templateName.trim()) { setError('テンプレート名を入力してください'); return }
+    const { validEntries } = buildTemplateData()
+    if (validEntries.length < 1) { setError('参加者を1人以上入力してください'); return }
+    setLoading(true)
+    try {
+      const { participantsData, eventsData } = buildTemplateData()
+      await updateTemplate(templateEditId, {
+        templateName: templateName.trim(),
+        tiltRatio: parseFloat(tiltRatio) || 2.0,
+        manualMode,
+        participantsData,
+        eventsData,
+      })
+      navigation.goBack()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '保存に失敗しました')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSaveAsNewTemplate = async () => {
+    Alert.prompt('別名で保存', '新しいテンプレート名を入力してください', async (name) => {
+      if (!name?.trim()) return
+      setLoading(true)
+      try {
+        const deviceId = await getDeviceId()
+        const { participantsData, eventsData } = buildTemplateData()
+        await saveTemplate({
+          deviceId,
+          templateName: name.trim(),
+          tiltRatio: parseFloat(tiltRatio) || 2.0,
+          manualMode,
+          participantsData,
+          eventsData,
+        })
+        Alert.alert('保存しました', '新しいテンプレートとして保存しました', [
+          { text: 'OK', onPress: () => navigation.goBack() },
+        ])
+      } catch (e) {
+        Alert.alert('エラー', e instanceof Error ? e.message : '保存に失敗しました')
+      } finally {
+        setLoading(false)
+      }
+    }, 'plain-text', templateName)
+  }
+
+  const handleDeleteTemplateEdit = () => {
+    if (!templateEditId) return
+    Alert.alert('削除確認', `「${templateName || 'このテンプレート'}」を削除しますか？`, [
+      { text: 'キャンセル', style: 'cancel' },
+      {
+        text: '削除', style: 'destructive', onPress: async () => {
+          setLoading(true)
+          try {
+            await deleteTemplate(templateEditId)
+            navigation.goBack()
+          } catch (e) {
+            Alert.alert('エラー', e instanceof Error ? e.message : '削除に失敗しました')
+          } finally {
+            setLoading(false)
+          }
+        },
+      },
+    ])
   }
 
   const addEvent = () => {
@@ -382,6 +527,20 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
       >
         <Pressable onPress={() => suggestions !== null && setSuggestions(null)}>
 
+          {/* テンプレート名（テンプレート編集モードのみ） */}
+          {isTemplateEdit && (
+            <View style={styles.card}>
+              <Text style={styles.sectionTitle}>テンプレート名</Text>
+              <TextInput
+                style={styles.input}
+                value={templateName}
+                onChangeText={setTemplateName}
+                placeholder="テンプレート名"
+                placeholderTextColor="#9ca3af"
+              />
+            </View>
+          )}
+
           {/* イベント名 */}
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>飲み会・イベント名</Text>
@@ -454,7 +613,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                   />
                   <Text style={styles.unit}>円</Text>
                 </View>
-                {eIdx === 0 && <Text style={styles.required}>※ 1次会は必須です</Text>}
+                {eIdx === 0 && !isTemplateEdit && <Text style={styles.required}>※ 1次会は必須です</Text>}
                 <View style={styles.splitRow}>
                   <TouchableOpacity style={[styles.splitBtn, ev.splitMode !== 'equal' && styles.splitBtnTiltActive]} onPress={() => updateEvent(eIdx, 'splitMode', 'tilt')}>
                     <Text style={[styles.splitBtnText, ev.splitMode !== 'equal' && styles.splitBtnTextActive]}>傾斜配分</Text>
@@ -649,9 +808,26 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-          <TouchableOpacity style={[styles.submitBtn, loading && styles.submitBtnDisabled]} onPress={handleSubmit} disabled={loading}>
-            {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>精算内容を確定してURLを発行</Text>}
-          </TouchableOpacity>
+          {isTemplateEdit ? (
+            <View>
+              <TouchableOpacity style={[styles.submitBtn, loading && styles.submitBtnDisabled]} onPress={handleSaveTemplateEdit} disabled={loading}>
+                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>💾 保存（上書き）</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.submitBtn, styles.templateSaveAsBtn, loading && styles.submitBtnDisabled]} onPress={handleSaveAsNewTemplate} disabled={loading}>
+                <Text style={styles.submitBtnText}>📋 別名で保存</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.submitBtn, styles.templateDeleteBtn, loading && styles.submitBtnDisabled]} onPress={handleDeleteTemplateEdit} disabled={loading}>
+                <Text style={styles.submitBtnText}>🗑 削除</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.submitBtn, styles.templateCancelBtn]} onPress={() => navigation.goBack()} disabled={loading}>
+                <Text style={[styles.submitBtnText, styles.templateCancelBtnText]}>キャンセル</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity style={[styles.submitBtn, loading && styles.submitBtnDisabled]} onPress={handleSubmit} disabled={loading}>
+              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>精算内容を確定してURLを発行</Text>}
+            </TouchableOpacity>
+          )}
 
           <View style={{ height: 40 }} />
         </Pressable>
@@ -865,6 +1041,10 @@ const styles = StyleSheet.create({
   submitBtn: { backgroundColor: '#e97316', borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
   submitBtnDisabled: { opacity: 0.6 },
   submitBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  templateSaveAsBtn: { backgroundColor: '#7c3aed' },
+  templateDeleteBtn: { backgroundColor: '#dc2626' },
+  templateCancelBtn: { backgroundColor: '#f3f4f6', borderWidth: 1, borderColor: '#e5e7eb' },
+  templateCancelBtnText: { color: '#374151' },
   eventDateRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   calendarBtn: { width: 44, height: 44, borderWidth: 2, borderColor: '#fed7aa', backgroundColor: '#fff7ed', borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   calendarBtnText: { fontSize: 20 },
