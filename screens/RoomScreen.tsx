@@ -5,11 +5,20 @@ import {
 } from 'react-native'
 import type { RoomScreenProps } from '../navigation/types'
 import { supabase } from '../lib/supabase'
-import { applyRoundingPerEvent, type ParticipantInput, type EventInput } from '../lib/calculations'
+import { applyRoundingPerEvent, ROLE_EQUIVALENT_YEARS, type ParticipantInput, type EventInput } from '../lib/calculations'
 import { updateRoomSaved, saveTemplate } from '../lib/actions'
 import { getDeviceId } from '../lib/deviceId'
 
 type Unit = 500 | 1000
+
+function getRoleBadgeLabel(role: string, tenureYears: number | null): string {
+  const displayRole = role === 'その他役職' ? 'その他' : role.replace('クラス', '')
+  const years =
+    role !== 'その他役職' && ROLE_EQUIVALENT_YEARS[role] != null
+      ? ROLE_EQUIVALENT_YEARS[role]
+      : (tenureYears ?? 1)
+  return `${displayRole}・${years}年`
+}
 
 const COMPARISON_GRADIENTS = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0] as const
 
@@ -202,7 +211,6 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* ヘッダー */}
       <View style={styles.header}>
-        <Text style={styles.headerIcon}>🎉</Text>
         <Text style={styles.headerTitle}>傾斜精算</Text>
         {room.event_date && <Text style={styles.headerSub}>📅 {room.event_date}</Text>}
         <Text style={styles.headerSub}>参加者 {participants.length}名</Text>
@@ -249,7 +257,9 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
             <View style={styles.resultLeft}>
               {r.is_organizer && <Text style={styles.organizerBadge}>幹事</Text>}
               <Text style={styles.resultName}>{r.name}</Text>
-              <Text style={styles.resultRole}>{r.role}</Text>
+              <View style={styles.roleBadge}>
+                <Text style={styles.roleBadgeText}>{getRoleBadgeLabel(r.role, r.tenure_years)}</Text>
+              </View>
             </View>
             <View style={styles.resultRight}>
               <Text style={styles.resultAmount}>{r.payment.toLocaleString()}<Text style={styles.resultUnit}>円</Text></Text>
@@ -274,7 +284,10 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
                 </View>
                 {results.map((r) => (
                   <View key={r.id} style={styles.tableRow}>
-                    <Text style={[styles.tableCell, styles.tableNameCell]} numberOfLines={1}>{r.name}</Text>
+                    <View style={[styles.tableNameCell, styles.tableNameCellView]}>
+                      <Text style={styles.tableNamePrimary} numberOfLines={1}>{r.name}</Text>
+                      <Text style={styles.tableNameSub} numberOfLines={1}>{getRoleBadgeLabel(r.role, r.tenure_years)}</Text>
+                    </View>
                     {r.perEventPayment.map((amt, idx) => (
                       <Text key={idx} style={[styles.tableCell, styles.tableAmountCell]}>{amt != null ? amt.toLocaleString() : '—'}</Text>
                     ))}
@@ -303,6 +316,7 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
                   <View key={r.id} style={styles.compNameDataCell}>
                     <Text style={styles.compNameText} numberOfLines={1}>{r.name}</Text>
                     {r.is_organizer && <Text style={styles.compOrgLabel}>幹事</Text>}
+                    <Text style={styles.compRoleSub} numberOfLines={1}>{getRoleBadgeLabel(r.role, r.tenure_years)}</Text>
                   </View>
                 ))}
               </View>
@@ -418,8 +432,7 @@ const styles = StyleSheet.create({
   content: { padding: 16 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   emptyText: { color: '#6b7280', fontSize: 15 },
-  header: { backgroundColor: '#1e293b', borderRadius: 16, padding: 20, marginBottom: 14, alignItems: 'center' },
-  headerIcon: { fontSize: 36, marginBottom: 4 },
+  header: { backgroundColor: '#1e293b', borderRadius: 16, paddingVertical: 22, paddingHorizontal: 20, marginBottom: 14, alignItems: 'center' },
   headerTitle: { fontSize: 22, fontWeight: '800', color: '#fff' },
   headerSub: { fontSize: 13, color: 'rgba(255,255,255,0.8)', marginTop: 4 },
   headerBadge: { backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4, marginTop: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
@@ -445,7 +458,8 @@ const styles = StyleSheet.create({
   resultLeft: { flex: 1 },
   organizerBadge: { fontSize: 10, color: '#d97706', fontWeight: '700', backgroundColor: '#fef3c7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, alignSelf: 'flex-start', marginBottom: 2 },
   resultName: { fontSize: 16, fontWeight: '700', color: '#1a1a2e' },
-  resultRole: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
+  roleBadge: { flexDirection: 'row', alignSelf: 'flex-start', backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#fed7aa', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, marginTop: 4 },
+  roleBadgeText: { fontSize: 11, color: '#b45309', fontWeight: '500' },
   resultRight: { alignItems: 'flex-end' },
   resultAmount: { fontSize: 22, fontWeight: '800', color: '#e97316' },
   resultUnit: { fontSize: 13, fontWeight: '400', color: '#9ca3af' },
@@ -453,16 +467,20 @@ const styles = StyleSheet.create({
   tableRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
   tableCell: { paddingVertical: 10, paddingHorizontal: 8, fontSize: 13, color: '#374151' },
   tableHeaderCell: { fontWeight: '700', color: '#6b7280', fontSize: 12, backgroundColor: '#f9fafb' },
-  tableNameCell: { width: 80 },
+  tableNameCell: { width: 110 },
+  tableNameCellView: { paddingVertical: 8, paddingHorizontal: 8, justifyContent: 'center' },
+  tableNamePrimary: { fontSize: 13, color: '#374151', fontWeight: '500' },
+  tableNameSub: { fontSize: 10, color: '#b45309', marginTop: 2 },
   tableAmountCell: { width: 80, textAlign: 'right' },
   tableTotalCell: { fontWeight: '700', color: '#e97316' },
   // 傾斜パターン比較表
   compTable: { flexDirection: 'row', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, overflow: 'hidden' },
-  compNameCol: { width: 84, borderRightWidth: 1, borderRightColor: '#e5e7eb', backgroundColor: '#f8fafc' },
+  compNameCol: { width: 104, borderRightWidth: 1, borderRightColor: '#e5e7eb', backgroundColor: '#f8fafc' },
   compHeaderCell: { height: 48, justifyContent: 'center', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#e5e7eb', backgroundColor: '#f1f5f9', paddingHorizontal: 6 },
-  compNameDataCell: { height: 46, justifyContent: 'center', paddingHorizontal: 8, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  compNameDataCell: { minHeight: 58, justifyContent: 'center', paddingHorizontal: 8, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
   compNameText: { fontSize: 12, fontWeight: '600', color: '#374151' },
   compOrgLabel: { fontSize: 9, color: '#d97706', fontWeight: '700' },
+  compRoleSub: { fontSize: 10, color: '#b45309', marginTop: 2 },
   compHeaderRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
   compGradientHeaderCell: { width: 70, height: 48, justifyContent: 'center', alignItems: 'center', borderRightWidth: 1, borderRightColor: '#e5e7eb', backgroundColor: '#f1f5f9', paddingHorizontal: 4 },
   compCurrentGradientHeaderCell: { backgroundColor: '#fff7ed', borderRightColor: '#fed7aa' },
@@ -470,7 +488,7 @@ const styles = StyleSheet.create({
   compCurrentHeaderText: { color: '#e97316' },
   compCurrentLabel: { fontSize: 9, color: '#e97316', fontWeight: '600', textAlign: 'center', marginTop: 1 },
   compDataRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
-  compCell: { width: 70, height: 46, justifyContent: 'center', alignItems: 'center', borderRightWidth: 1, borderRightColor: '#f3f4f6', paddingHorizontal: 4 },
+  compCell: { width: 70, minHeight: 58, justifyContent: 'center', alignItems: 'center', borderRightWidth: 1, borderRightColor: '#f3f4f6', paddingHorizontal: 4 },
   compCurrentCell: { backgroundColor: '#fff7ed' },
   compCellText: { fontSize: 12, fontWeight: '500', color: '#374151', textAlign: 'center' },
   compCurrentCellText: { fontWeight: '700', color: '#e97316' },
