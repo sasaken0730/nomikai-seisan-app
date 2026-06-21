@@ -153,6 +153,12 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
         setSavingTemplate(true)
         try {
           const deviceId = await getDeviceId()
+          const eventsData = events.map((e) => {
+            const payerId = payerByEventId[e.id]
+            const payerName = payerId ? (participants.find((p) => p.id === payerId)?.name ?? null) : null
+            return { name: e.name, split_mode: e.splitMode ?? 'tilt', total_amount: e.amount, payer_participant_name: payerName }
+          })
+          console.log('[saveTemplate] eventsData:', JSON.stringify(eventsData.map((e) => ({ name: e.name, payer: e.payer_participant_name }))))
           await saveTemplate({
             deviceId,
             templateName: name.trim(),
@@ -165,11 +171,7 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
               is_organizer: p.is_organizer,
               manual_multiplier: p.manual_multiplier ?? 1,
             })),
-            eventsData: events.map((e) => {
-            const payerId = payerByEventId[e.id]
-            const payerName = payerId ? (participants.find((p) => p.id === payerId)?.name ?? null) : null
-            return { name: e.name, split_mode: e.splitMode ?? 'tilt', total_amount: e.amount, payer_participant_name: payerName }
-          }),
+            eventsData,
           })
           Alert.alert('保存しました', 'テンプレートに保存しました')
         } catch (e) {

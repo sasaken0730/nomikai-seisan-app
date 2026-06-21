@@ -123,24 +123,38 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
       if (!tmpl) return
       const pData = (tmpl.participants_data as { name: string; role: string; tenure_years: number | null; is_organizer: boolean; manual_multiplier: number }[]) ?? []
       const eData = (tmpl.events_data as { name: string; split_mode: string; total_amount?: number; payer_participant_name?: string | null }[]) ?? []
+      // orgIdx を先に確定（フォールバック立替者として使うため）
+      const orgIdx = pData.findIndex((p) => p.is_organizer)
       console.log('[loadFromTemplate] 元データ:', JSON.stringify(eData.map((e) => ({ name: e.name, amount: e.total_amount, payer: e.payer_participant_name }))))
+      console.log('[loadFromTemplate] orgIdx:', orgIdx, orgIdx >= 0 ? `(${pData[orgIdx]?.name})` : '(幹事なし)')
       setTiltRatio(((tmpl.tilt_ratio as number) ?? 2.0).toFixed(1))
       setManualMode((tmpl.manual_mode as boolean) ?? false)
       const evtCount = eData.length || 1
       const newEvents: EventState[] = eData.length > 0 ? eData.map((e) => {
-        const payerIdx = e.payer_participant_name != null
-          ? pData.findIndex((p) => p.name === e.payer_participant_name)
-          : -1
+        let payerIdx = -1
+        if (e.payer_participant_name != null) {
+          payerIdx = pData.findIndex((p) => p.name === e.payer_participant_name)
+          if (payerIdx === -1) {
+            // 名前が一致するメンバーがいない → 幹事にフォールバック
+            console.log(`[loadFromTemplate] "${e.name}": payer "${e.payer_participant_name}" 不在 → 幹事(idx=${orgIdx})にフォールバック`)
+          } else {
+            console.log(`[loadFromTemplate] "${e.name}": payer "${e.payer_participant_name}" → idx=${payerIdx}`)
+          }
+        } else {
+          // 旧テンプレート等で payer_participant_name 未保存 → 幹事にフォールバック
+          console.log(`[loadFromTemplate] "${e.name}": payer_participant_name 未設定 → 幹事(idx=${orgIdx})にフォールバック`)
+        }
+        // 立替者が特定できなかった場合は幹事をデフォルト立替者にセット
+        const resolvedPayerIdx = payerIdx >= 0 ? payerIdx : (orgIdx >= 0 ? orgIdx : null)
         return {
           name: e.name,
           totalAmount: e.total_amount != null && e.total_amount > 0 ? String(e.total_amount) : '',
           splitMode: e.split_mode === 'equal' ? 'equal' : 'tilt' as const,
-          payerParticipantIdx: payerIdx >= 0 ? payerIdx : null,
+          payerParticipantIdx: resolvedPayerIdx,
         }
-      }) : [{ name: '1次会', totalAmount: '', splitMode: 'tilt' as const, payerParticipantIdx: null }]
+      }) : [{ name: '1次会', totalAmount: '', splitMode: 'tilt' as const, payerParticipantIdx: orgIdx >= 0 ? orgIdx : null }]
       console.log('[loadFromTemplate] セット後:', JSON.stringify(newEvents.map((e) => ({ name: e.name, totalAmount: e.totalAmount, payerIdx: e.payerParticipantIdx }))))
       setEvents(newEvents)
-      const orgIdx = pData.findIndex((p) => p.is_organizer)
       setOrganizerIdx(orgIdx >= 0 ? orgIdx : null)
       setParticipants(pData.map((p) => ({ name: p.name, role: p.role, tenure_years: p.tenure_years != null ? String(p.tenure_years) : '', fixed_amount: '', manual_multiplier: String(p.manual_multiplier ?? 1.0), attendances: Array<boolean>(evtCount).fill(true) })))
     } finally {
