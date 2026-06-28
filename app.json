@@ -9,11 +9,17 @@
     "scheme": "nomikai-seisan",
     "extra": {
       "supabaseUrl": "",
-      "supabaseAnonKey": ""
+      "supabaseAnonKey": "",
+      "eas": {
+        "projectId": "7af0c38a-3b1e-4e33-afc8-22822c41c5df"
+      }
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.sasaken.nomikaiseisei"
+      "bundleIdentifier": "com.sasaken.nomikaiseisei",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -29,6 +35,7 @@
     },
     "plugins": [
       "@react-native-community/datetimepicker"
-    ]
+    ],
+    "owner": "keito0208"
   }
 }
