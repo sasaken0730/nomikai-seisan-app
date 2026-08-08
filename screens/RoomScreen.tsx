@@ -452,10 +452,6 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
         )}
       </View>
 
-      <TouchableOpacity style={styles.editBtn} onPress={() => navigation.navigate('Edit', { shareId })}>
-        <Text style={styles.editBtnText}>✏️ 精算内容を更新する</Text>
-      </TouchableOpacity>
-
       <TouchableOpacity style={styles.newBtn} onPress={() => navigation.navigate('Create', {})}>
         <Text style={styles.newBtnText}>↩ 新しい精算を始める</Text>
       </TouchableOpacity>
@@ -553,9 +549,7 @@ const styles = StyleSheet.create({
   actionBtnSavedText: { color: '#16a34a' },
   actionBtnTemplate: { backgroundColor: '#7c3aed', borderColor: '#7c3aed' },
   actionBtnTemplateText: { color: '#fff' },
-  editBtn: { backgroundColor: '#f59e0b', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginBottom: 10 },
-  editBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  newBtn: { borderWidth: 2, borderColor: '#fed7aa', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginBottom: 14 },
+  newBtn: { borderWidth: 2, borderColor: '#fed7aa', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 10, marginBottom: 14 },
   newBtnText: { color: '#e97316', fontSize: 15, fontWeight: '700' },
   hint: { fontSize: 13, color: '#9ca3af', textAlign: 'center' },
   compHintRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 0 },
