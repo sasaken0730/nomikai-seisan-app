@@ -2,6 +2,7 @@ import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from
 import {
   View, Text, TextInput, TouchableOpacity, ScrollView,
   StyleSheet, Alert, ActivityIndicator, Modal, Platform, Pressable,
+  Keyboard, InputAccessoryView,
 } from 'react-native'
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker'
 import type { CreateScreenProps } from '../navigation/types'
@@ -27,6 +28,7 @@ interface EventState {
 }
 
 const EVENT_PRESETS = ['1次会', '2次会', '3次会', '4次会', 'タクシー代', 'プレゼント代']
+const NUMERIC_ACCESSORY_ID = 'createScreenNumericDone'
 
 function makeParticipant(evtCount: number): ParticipantState {
   return {
@@ -73,6 +75,11 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
   const [roleModalIdx, setRoleModalIdx] = useState<number | null>(null)
   const [showDatePicker, setShowDatePicker] = useState(false)
   const [pickerDate, setPickerDate] = useState(new Date())
+  const [deviceId, setDeviceId] = useState<string | null>(null)
+
+  useEffect(() => {
+    getDeviceId().then(setDeviceId)
+  }, [])
 
   useEffect(() => {
     if (fromShareId) {
@@ -427,10 +434,11 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     if (value.trim().length < 1) { setSuggestions(null); return }
     debounceRef.current = setTimeout(async () => {
-      const list = await getSuggestions(value.trim())
+      if (!deviceId) { setSuggestions(null); return }
+      const list = await getSuggestions(value.trim(), deviceId)
       setSuggestions(list.length > 0 ? { idx: i, list } : null)
     }, 300)
-  }, [participants])
+  }, [participants, deviceId])
 
   const applySuggestion = (i: number, s: Suggestion) => {
     const next = [...participants]
@@ -525,7 +533,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
         keyboardShouldPersistTaps="handled"
         onScrollBeginDrag={() => setSuggestions(null)}
       >
-        <Pressable onPress={() => suggestions !== null && setSuggestions(null)}>
+        <Pressable onPress={() => { if (suggestions !== null) setSuggestions(null); Keyboard.dismiss() }}>
 
           {/* テンプレート名（テンプレート編集モードのみ） */}
           {isTemplateEdit && (
@@ -610,6 +618,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                     placeholder="例: 30000"
                     placeholderTextColor="#9ca3af"
                     keyboardType="numeric"
+                    inputAccessoryViewID={Platform.OS === 'ios' ? NUMERIC_ACCESSORY_ID : undefined}
                   />
                   <Text style={styles.unit}>円</Text>
                 </View>
@@ -649,7 +658,8 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                       <TouchableOpacity
                         style={styles.memberPickerBtn}
                         onPress={async () => {
-                          const list = await getRecentMembers()
+                          if (!deviceId) return
+                          const list = await getRecentMembers(deviceId)
                           setMemberPickerList(list)
                           setMemberPickerIdx(i)
                         }}
@@ -701,6 +711,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                       placeholder="年次"
                       placeholderTextColor="#9ca3af"
                       keyboardType="numeric"
+                      inputAccessoryViewID={Platform.OS === 'ios' ? NUMERIC_ACCESSORY_ID : undefined}
                     />
                     <Text style={styles.unit}>年目</Text>
                     <TextInput
@@ -710,6 +721,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                       placeholder="固定額（省略可）"
                       placeholderTextColor="#9ca3af"
                       keyboardType="numeric"
+                      inputAccessoryViewID={Platform.OS === 'ios' ? NUMERIC_ACCESSORY_ID : undefined}
                     />
                     <Text style={styles.unit}>円固定</Text>
                   </View>
@@ -723,6 +735,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                       placeholder="固定額（省略可）"
                       placeholderTextColor="#9ca3af"
                       keyboardType="numeric"
+                      inputAccessoryViewID={Platform.OS === 'ios' ? NUMERIC_ACCESSORY_ID : undefined}
                     />
                     <Text style={styles.unit}>円固定</Text>
                   </View>
@@ -832,6 +845,16 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
           <View style={{ height: 40 }} />
         </Pressable>
       </ScrollView>
+
+      {Platform.OS === 'ios' && (
+        <InputAccessoryView nativeID={NUMERIC_ACCESSORY_ID}>
+          <View style={styles.keyboardDoneBar}>
+            <TouchableOpacity onPress={() => Keyboard.dismiss()}>
+              <Text style={styles.keyboardDoneBarText}>完了</Text>
+            </TouchableOpacity>
+          </View>
+        </InputAccessoryView>
+      )}
 
       {/* 傾斜倍率モーダル */}
       <Modal visible={tiltModalOpen} transparent animationType="slide" onRequestClose={() => setTiltModalOpen(false)}>
@@ -962,6 +985,8 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
   content: { padding: 16 },
+  keyboardDoneBar: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, backgroundColor: '#f8f8fa', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#d1d5db' },
+  keyboardDoneBarText: { color: '#e97316', fontSize: 16, fontWeight: '700' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
   sectionTitle: { fontSize: 15, fontWeight: '700', color: '#1a1a2e', marginBottom: 12 },

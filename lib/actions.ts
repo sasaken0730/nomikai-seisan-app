@@ -161,12 +161,29 @@ function toHiragana(str: string): string {
   return str.replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60))
 }
 
-export async function getSuggestions(query: string): Promise<Suggestion[]> {
+// 自分（このデバイス）が作成したルームの id 一覧だけを返す。
+// 他ユーザーのルームの participants を絶対に露出させないためのスコープ境界。
+async function getOwnRoomIds(deviceId: string): Promise<string[]> {
+  if (!deviceId) return []
+
+  const { data } = await supabase
+    .from('nomikai_seisan_rooms')
+    .select('id')
+    .eq('created_by_device_id', deviceId)
+
+  return (data ?? []).map((r) => r.id as string)
+}
+
+export async function getSuggestions(query: string, deviceId: string): Promise<Suggestion[]> {
   if (!query.trim()) return []
+
+  const roomIds = await getOwnRoomIds(deviceId)
+  if (roomIds.length === 0) return []
 
   const { data } = await supabase
     .from('nomikai_seisan_participants')
     .select('name, role, tenure_years, created_at')
+    .in('room_id', roomIds)
     .order('created_at', { ascending: false })
     .limit(200)
 
@@ -196,10 +213,14 @@ export async function getSuggestions(query: string): Promise<Suggestion[]> {
     }))
 }
 
-export async function getRecentMembers(): Promise<Suggestion[]> {
+export async function getRecentMembers(deviceId: string): Promise<Suggestion[]> {
+  const roomIds = await getOwnRoomIds(deviceId)
+  if (roomIds.length === 0) return []
+
   const { data } = await supabase
     .from('nomikai_seisan_participants')
     .select('name, role, tenure_years, created_at')
+    .in('room_id', roomIds)
     .order('created_at', { ascending: false })
     .limit(200)
 
