@@ -72,6 +72,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
   const [memberPickerList, setMemberPickerList] = useState<Suggestion[]>([])
   const [presetModalIdx, setPresetModalIdx] = useState<number | null>(null)
   const [tiltModalOpen, setTiltModalOpen] = useState(false)
+  const [tiltHelpOpen, setTiltHelpOpen] = useState(false)
   const [multiplierModalIdx, setMultiplierModalIdx] = useState<number | null>(null)
   const [roleModalIdx, setRoleModalIdx] = useState<number | null>(null)
   const [showDatePicker, setShowDatePicker] = useState(false)
@@ -584,10 +585,20 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
               </TouchableOpacity>
             </View>
             {!manualMode && (
-              <TouchableOpacity style={styles.selector} onPress={() => setTiltModalOpen(true)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
-                <Text style={styles.selectorText}>{tiltRatio}倍{tiltRatio === '2.0' ? '（推奨）' : ''}</Text>
-                <Text style={styles.selectorArrow}>▼</Text>
-              </TouchableOpacity>
+              <>
+                <TouchableOpacity style={styles.selector} onPress={() => setTiltModalOpen(true)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                  <Text style={styles.selectorText}>{tiltRatio}倍{tiltRatio === '2.0' ? '（推奨）' : ''}</Text>
+                  <Text style={styles.selectorArrow}>▼</Text>
+                </TouchableOpacity>
+                <View style={styles.tiltExplainRow}>
+                  <Text style={styles.tiltExplainText}>
+                    {tiltRatio}倍：一番年次が高い人が、一番若い人の{tiltRatio}倍を目安に払います
+                  </Text>
+                  <TouchableOpacity onPress={() => setTiltHelpOpen(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Text style={styles.tiltExplainLink}>詳しく見る</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
             )}
             {manualMode && <Text style={styles.hint}>各参加者の倍率は参加者カードで設定してください</Text>}
           </View>
@@ -870,6 +881,32 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
         </InputAccessoryView>
       )}
 
+      {/* 傾斜設定の説明モーダル */}
+      <Modal visible={tiltHelpOpen} transparent animationType="slide" onRequestClose={() => setTiltHelpOpen(false)}>
+        <TouchableOpacity style={styles.modalOverlay} onPress={() => setTiltHelpOpen(false)} activeOpacity={1}>
+          <View style={styles.modalSheet} onStartShouldSetResponder={() => true}>
+            <Text style={styles.modalTitle}>傾斜設定とは？</Text>
+            <View style={{ paddingHorizontal: 24, paddingBottom: 8 }}>
+              <Text style={styles.tiltHelpBody}>
+                役職や年次が高い人ほど多く払う「傾斜配分」の度合いを倍率で決めます。
+              </Text>
+              <Text style={styles.tiltHelpBody}>
+                例えば2.0倍を選ぶと、参加者の中で一番年次が高い人は、一番若い人のおよそ2倍の金額を払う計算になります。年次が中間の人はその間の金額になります。
+              </Text>
+              <Text style={styles.tiltHelpBody}>
+                倍率を大きくするほど、若手の負担は軽く・年次が高い人の負担は重くなります。1.0倍にすると全員均等割りと同じになります。
+              </Text>
+              <Text style={styles.tiltHelpBody}>
+                迷ったら「2.0倍（推奨）」がバランスの良い目安です。
+              </Text>
+            </View>
+            <TouchableOpacity style={styles.tiltHelpCloseBtn} onPress={() => setTiltHelpOpen(false)}>
+              <Text style={styles.tiltHelpCloseBtnText}>閉じる</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       {/* 傾斜倍率モーダル */}
       <Modal visible={tiltModalOpen} transparent animationType="slide" onRequestClose={() => setTiltModalOpen(false)}>
         <TouchableOpacity style={styles.modalOverlay} onPress={() => setTiltModalOpen(false)} activeOpacity={1}>
@@ -1018,6 +1055,12 @@ const styles = StyleSheet.create({
   selectorText: { fontSize: 14, color: '#111', flex: 1 },
   selectorArrow: { fontSize: 12, color: '#9ca3af', marginLeft: 8 },
   hint: { fontSize: 12, color: '#9ca3af', marginTop: 4 },
+  tiltExplainRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
+  tiltExplainText: { flex: 1, fontSize: 12, color: '#9ca3af', marginRight: 8 },
+  tiltExplainLink: { fontSize: 12, color: '#e97316', fontWeight: '600' },
+  tiltHelpBody: { fontSize: 14, color: '#374151', lineHeight: 21, marginBottom: 12 },
+  tiltHelpCloseBtn: { marginHorizontal: 24, marginTop: 4, backgroundColor: '#f3f4f6', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+  tiltHelpCloseBtnText: { fontSize: 14, fontWeight: '700', color: '#374151' },
   eventCard: { borderWidth: 1, borderColor: '#fed7aa', borderRadius: 12, padding: 12, marginBottom: 10, backgroundColor: '#fff7ed' },
   eventNameRow: { flex: 1, flexDirection: 'row', alignItems: 'center' },
   dropArrow: { position: 'absolute', right: 10, color: '#9ca3af', fontSize: 12 },

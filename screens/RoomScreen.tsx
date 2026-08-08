@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useLayoutEffect } from 'react'
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Share,
   ActivityIndicator, Alert, Platform,
 } from 'react-native'
 import * as Haptics from 'expo-haptics'
+import * as Clipboard from 'expo-clipboard'
 import type { RoomScreenProps } from '../navigation/types'
 import { supabase } from '../lib/supabase'
 import { applyRoundingPerEvent, ROLE_EQUIVALENT_YEARS, type ParticipantInput, type EventInput } from '../lib/calculations'
@@ -22,6 +23,28 @@ function getRoleBadgeLabel(role: string, tenureYears: number | null): string {
 }
 
 const COMPARISON_GRADIENTS = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0] as const
+
+// 全角文字は半角2文字分として扱い、LINE/メモ帳などプロポーショナルフォントでも
+// できるだけ列が揃って見えるようにパディングする
+function displayWidth(str: string): number {
+  let w = 0
+  for (const ch of str) {
+    const code = ch.codePointAt(0) ?? 0
+    const isWide =
+      (code >= 0x1100 && code <= 0x115f) ||
+      (code >= 0x2e80 && code <= 0xa4cf) ||
+      (code >= 0xac00 && code <= 0xd7a3) ||
+      (code >= 0xf900 && code <= 0xfaff) ||
+      (code >= 0xff00 && code <= 0xff60) ||
+      (code >= 0xffe0 && code <= 0xffe6)
+    w += isWide ? 2 : 1
+  }
+  return w
+}
+
+function padEnd(str: string, width: number): string {
+  return str + ' '.repeat(Math.max(1, width - displayWidth(str)))
+}
 
 interface RoomData {
   id: string
@@ -72,6 +95,14 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
   const [savingTemplate, setSavingTemplate] = useState(false)
   const [unit, setUnit] = useState<Unit>(1000)
   const [selectedGradient, setSelectedGradient] = useState<number | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const showToast = (message: string) => {
+    setToast(message)
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+    toastTimerRef.current = setTimeout(() => setToast(null), 1800)
+  }
 
   useEffect(() => {
     loadRoom()
@@ -220,6 +251,51 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
 
   const sortedResults = [...results].sort((a, b) => b.payment - a.payment)
 
+  const buildBreakdownText = (): string => {
+    const lines: string[] = []
+    lines.push(`⚖️ 傾斜精算${room.event_date ? '　' + room.event_date : ''}`)
+    lines.push(`参加者${participants.length}名／合計${grandTotal.toLocaleString()}円／傾斜${gradient.toFixed(1)}倍`)
+    lines.push('')
+    lines.push('【精算金額】')
+    const nameWidth = Math.max(...sortedResults.map((r) => displayWidth(r.name)), 8) + 2
+    sortedResults.forEach((r) => {
+      lines.push(`${padEnd(r.name, nameWidth)}${r.payment.toLocaleString()}円`)
+    })
+    if (events.length > 1) {
+      lines.push('')
+      lines.push('【内訳】')
+      lines.push(['名前', ...events.map((e) => e.name), '合計'].join('\t'))
+      results.forEach((r) => {
+        lines.push(
+          [r.name, ...r.perEventPayment.map((a) => (a != null ? a.toLocaleString() : '—')), r.payment.toLocaleString()].join('\t')
+        )
+      })
+    }
+    lines.push('')
+    lines.push(`傾斜精算くん https://nomikai-seisan.vercel.app/room/${shareId}`)
+    return lines.join('\n')
+  }
+
+  const buildSummaryText = (): string => {
+    const lines: string[] = []
+    lines.push(`⚖️ 傾斜精算${room.event_date ? '　' + room.event_date : ''}`)
+    lines.push(`合計${grandTotal.toLocaleString()}円／${participants.length}名`)
+    sortedResults.forEach((r) => lines.push(`${r.name}：${r.payment.toLocaleString()}円`))
+    return lines.join('\n')
+  }
+
+  const handleCopyBreakdown = async () => {
+    await Clipboard.setStringAsync(buildBreakdownText())
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
+    showToast('内訳をコピーしました')
+  }
+
+  const handleCopySummary = async () => {
+    await Clipboard.setStringAsync(buildSummaryText())
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
+    showToast('サマリーをコピーしました')
+  }
+
   // 傾斜パターン比較（manualMode 時は傾斜倍率が効かないので非表示）
   const comparisonResults = !manualMode
     ? COMPARISON_GRADIENTS.reduce<Record<number, ReturnType<typeof applyRoundingPerEvent>>>((acc, g) => {
@@ -229,7 +305,8 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
     : null
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <View style={{ flex: 1 }}>
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* ヘッダー */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>傾斜精算</Text>
@@ -241,6 +318,20 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
           </Text>
         </View>
       </View>
+
+      {/* 履歴保存（メインCTA） */}
+      {!room.is_saved && (
+        <TouchableOpacity style={styles.primarySaveCard} onPress={handleSave} disabled={saving} activeOpacity={0.85}>
+          {saving ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <>
+              <Text style={styles.primarySaveCardTitle}>💾 この精算を履歴に保存</Text>
+              <Text style={styles.primarySaveCardSub}>保存すると履歴からいつでも確認できます</Text>
+            </>
+          )}
+        </TouchableOpacity>
+      )}
 
       {/* 金額サマリー */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.summaryScroll}>
@@ -441,11 +532,12 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
         <TouchableOpacity style={styles.actionBtn} onPress={handleShare}>
           <Text style={styles.actionBtnText}>🔗 URLを共有</Text>
         </TouchableOpacity>
-        {!room.is_saved && (
-          <TouchableOpacity style={[styles.actionBtn, styles.actionBtnSave]} onPress={handleSave} disabled={saving}>
-            {saving ? <ActivityIndicator color="#fff" /> : <Text style={[styles.actionBtnText, styles.actionBtnSaveText]}>💾 履歴に保存</Text>}
-          </TouchableOpacity>
-        )}
+        <TouchableOpacity style={[styles.actionBtn, styles.actionBtnCopy]} onPress={handleCopyBreakdown}>
+          <Text style={[styles.actionBtnText, styles.actionBtnCopyText]}>📋 内訳をコピー</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.actionBtn} onPress={handleCopySummary}>
+          <Text style={styles.actionBtnText}>📄 サマリーをコピー</Text>
+        </TouchableOpacity>
         {room.is_saved && (
           <View style={[styles.actionBtn, styles.actionBtnSaved]}>
             <Text style={[styles.actionBtnText, styles.actionBtnSavedText]}>✓ 履歴に保存済み</Text>
@@ -463,7 +555,13 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
       </TouchableOpacity>
 
       <View style={{ height: 40 }} />
-    </ScrollView>
+      </ScrollView>
+      {toast && (
+        <View style={styles.toast} pointerEvents="none">
+          <Text style={styles.toastText}>{toast}</Text>
+        </View>
+      )}
+    </View>
   )
 }
 
@@ -477,6 +575,12 @@ const styles = StyleSheet.create({
   headerSub: { fontSize: 13, color: 'rgba(255,255,255,0.8)', marginTop: 4 },
   headerBadge: { backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4, marginTop: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
   headerBadgeText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  primarySaveCard: {
+    backgroundColor: '#16a34a', borderRadius: 16, paddingVertical: 18, alignItems: 'center', marginBottom: 14,
+    shadowColor: '#16a34a', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 4,
+  },
+  primarySaveCardTitle: { color: '#fff', fontSize: 17, fontWeight: '800' },
+  primarySaveCardSub: { color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 4 },
   summaryScroll: { marginBottom: 14 },
   summaryRow: { flexDirection: 'row', gap: 10, paddingVertical: 4 },
   summaryCard: { backgroundColor: '#fff', borderRadius: 12, padding: 12, minWidth: 100, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 1 },
@@ -549,8 +653,8 @@ const styles = StyleSheet.create({
   actionsTitle: { fontSize: 14, fontWeight: '700', color: '#374151', marginBottom: 10 },
   actionBtn: { borderWidth: 1.5, borderColor: '#e5e7eb', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginBottom: 8 },
   actionBtnText: { fontSize: 14, fontWeight: '600', color: '#374151' },
-  actionBtnSave: { backgroundColor: '#1a1a2e', borderColor: '#1a1a2e' },
-  actionBtnSaveText: { color: '#fff' },
+  actionBtnCopy: { backgroundColor: '#eff6ff', borderColor: '#bfdbfe' },
+  actionBtnCopyText: { color: '#1d4ed8' },
   actionBtnSaved: { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' },
   actionBtnSavedText: { color: '#16a34a' },
   actionBtnTemplate: { backgroundColor: '#7c3aed', borderColor: '#7c3aed' },
@@ -561,4 +665,9 @@ const styles = StyleSheet.create({
   compHintRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 0 },
   resetGradBtn: { backgroundColor: '#f1f5f9', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: '#e2e8f0' },
   resetGradBtnText: { fontSize: 11, color: '#64748b', fontWeight: '600' },
+  toast: {
+    position: 'absolute', bottom: 32, left: 24, right: 24, alignItems: 'center',
+    backgroundColor: 'rgba(26,26,46,0.92)', borderRadius: 24, paddingVertical: 12, paddingHorizontal: 20,
+  },
+  toastText: { color: '#fff', fontSize: 14, fontWeight: '600' },
 })
