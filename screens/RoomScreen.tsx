@@ -3,6 +3,7 @@ import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, Share,
   ActivityIndicator, Alert, Platform,
 } from 'react-native'
+import * as Haptics from 'expo-haptics'
 import type { RoomScreenProps } from '../navigation/types'
 import { supabase } from '../lib/supabase'
 import { applyRoundingPerEvent, ROLE_EQUIVALENT_YEARS, type ParticipantInput, type EventInput } from '../lib/calculations'
@@ -149,8 +150,10 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
     try {
       await updateRoomSaved(shareId)
       setRoom((r) => r ? { ...r, is_saved: true } : r)
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
       Alert.alert('保存しました', '履歴ページに表示されます')
     } catch (e) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
       Alert.alert('エラー', e instanceof Error ? e.message : '保存に失敗しました')
     } finally {
       setSaving(false)
@@ -187,8 +190,10 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
             })),
             eventsData,
           })
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
           Alert.alert('保存しました', 'テンプレートに保存しました')
         } catch (e) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
           Alert.alert('エラー', e instanceof Error ? e.message : '保存に失敗しました')
         } finally {
           setSavingTemplate(false)
@@ -260,7 +265,7 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
         <Text style={styles.cardLabel}>丸め単位</Text>
         <View style={styles.unitRow}>
           {([500, 1000] as Unit[]).map((u) => (
-            <TouchableOpacity key={u} style={[styles.unitBtn, unit === u && styles.unitBtnActive]} onPress={() => setUnit(u)}>
+            <TouchableOpacity key={u} style={[styles.unitBtn, unit === u && styles.unitBtnActive]} onPress={() => setUnit(u)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               <Text style={[styles.unitBtnText, unit === u && styles.unitBtnTextActive]}>{u}円</Text>
             </TouchableOpacity>
           ))}
@@ -330,7 +335,7 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
                   : '列タップで倍率を切替・上段も即時更新'}
               </Text>
               {selectedGradient !== null && Math.abs(selectedGradient - room.tilt_ratio) > 0.05 && (
-                <TouchableOpacity onPress={() => setSelectedGradient(null)} style={styles.resetGradBtn}>
+                <TouchableOpacity onPress={() => setSelectedGradient(null)} style={styles.resetGradBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                   <Text style={styles.resetGradBtnText}>↩ {room.tilt_ratio.toFixed(1)}倍に戻す</Text>
                 </TouchableOpacity>
               )}
@@ -365,6 +370,7 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
                             setSelectedGradient(alreadySelected || isDefault ? null : g)
                           }}
                           activeOpacity={0.7}
+                          hitSlop={{ top: 6, bottom: 6, left: 2, right: 2 }}
                         >
                           <Text style={[styles.compHeaderText, isCurrent && styles.compCurrentHeaderText]}>
                             {g === 1.0 ? '均等' : `${g.toFixed(1)}倍`}

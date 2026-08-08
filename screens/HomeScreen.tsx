@@ -1,8 +1,15 @@
 import React from 'react'
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native'
+import * as Haptics from 'expo-haptics'
 import type { HomeScreenProps } from '../navigation/types'
 
 export default function HomeScreen({ navigation }: HomeScreenProps) {
+  const goTo = (screen: 'Create' | 'History' | 'Templates') => {
+    Haptics.selectionAsync()
+    if (screen === 'Create') navigation.navigate('Create', {})
+    else navigation.navigate(screen)
+  }
+
   return (
     <View style={styles.container}>
       <View style={styles.hero}>
@@ -11,19 +18,19 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
       </View>
 
       <View style={styles.grid}>
-        <TouchableOpacity style={[styles.card, styles.primaryCard]} onPress={() => navigation.navigate('Create', {})}>
+        <TouchableOpacity style={[styles.card, styles.primaryCard]} onPress={() => goTo('Create')}>
           <Text style={styles.cardIcon}>＋</Text>
           <Text style={styles.cardTitle}>新規精算</Text>
           <Text style={styles.cardDesc}>参加者とイベントを入力して精算</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('History')}>
+        <TouchableOpacity style={styles.card} onPress={() => goTo('History')}>
           <Text style={[styles.cardIcon, styles.darkIcon]}>📋</Text>
           <Text style={[styles.cardTitle, styles.darkTitle]}>履歴</Text>
           <Text style={styles.cardDescDark}>保存済みの精算を確認</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('Templates')}>
+        <TouchableOpacity style={styles.card} onPress={() => goTo('Templates')}>
           <Text style={[styles.cardIcon, styles.darkIcon]}>📂</Text>
           <Text style={[styles.cardTitle, styles.darkTitle]}>テンプレート</Text>
           <Text style={styles.cardDescDark}>よく使う設定を再利用</Text>
