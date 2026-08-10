@@ -1,13 +1,51 @@
-import React from 'react'
+import React, { useState, useCallback } from 'react'
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native'
+import { useFocusEffect } from '@react-navigation/native'
 import * as Haptics from 'expo-haptics'
 import type { HomeScreenProps } from '../navigation/types'
+import { supabase } from '../lib/supabase'
+import { getDeviceId } from '../lib/deviceId'
+
+interface DraftRoom {
+  shareId: string
+  eventDate: string | null
+}
 
 export default function HomeScreen({ navigation }: HomeScreenProps) {
+  const [draftRoom, setDraftRoom] = useState<DraftRoom | null>(null)
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false
+      ;(async () => {
+        const deviceId = await getDeviceId()
+        const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+        const { data } = await supabase
+          .from('nomikai_seisan_rooms')
+          .select('share_id, event_date, created_at')
+          .eq('created_by_device_id', deviceId)
+          .eq('is_saved', false)
+          .gte('created_at', since)
+          .order('created_at', { ascending: false })
+          .limit(1)
+        if (cancelled) return
+        const room = data?.[0]
+        setDraftRoom(room ? { shareId: room.share_id as string, eventDate: room.event_date as string | null } : null)
+      })()
+      return () => { cancelled = true }
+    }, [])
+  )
+
   const goTo = (screen: 'Create' | 'History' | 'Templates') => {
     Haptics.selectionAsync()
     if (screen === 'Create') navigation.navigate('Create', {})
     else navigation.navigate(screen)
+  }
+
+  const resumeDraft = () => {
+    if (!draftRoom) return
+    Haptics.selectionAsync()
+    navigation.navigate('Create', { resumeDraftShareId: draftRoom.shareId })
   }
 
   return (
@@ -16,6 +54,17 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
         <Text style={styles.title}>⚖️ 傾斜精算くん</Text>
         <Text style={styles.subtitle}>役職・年次に応じた飲み会精算</Text>
       </View>
+
+      {draftRoom && (
+        <TouchableOpacity style={styles.draftBanner} onPress={resumeDraft} activeOpacity={0.85}>
+          <Text style={styles.draftBannerIcon}>📝</Text>
+          <View style={styles.flex1}>
+            <Text style={styles.draftBannerTitle}>作業中の精算があります</Text>
+            <Text style={styles.draftBannerSub}>{draftRoom.eventDate ? `${draftRoom.eventDate}・` : ''}タップして再開</Text>
+          </View>
+          <Text style={styles.draftBannerArrow}>›</Text>
+        </TouchableOpacity>
+      )}
 
       <View style={styles.grid}>
         <TouchableOpacity style={[styles.card, styles.primaryCard]} onPress={() => goTo('Create')}>
@@ -64,6 +113,15 @@ const styles = StyleSheet.create({
   grid: {
     gap: 14,
   },
+  flex1: { flex: 1 },
+  draftBanner: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#fed7aa',
+    borderRadius: 14, padding: 14, marginBottom: 16, gap: 10,
+  },
+  draftBannerIcon: { fontSize: 22 },
+  draftBannerTitle: { fontSize: 14, fontWeight: '700', color: '#9a3412' },
+  draftBannerSub: { fontSize: 12, color: '#c2410c', marginTop: 2 },
+  draftBannerArrow: { fontSize: 22, color: '#fb923c', fontWeight: '700' },
   card: {
     backgroundColor: '#fff',
     borderRadius: 16,
