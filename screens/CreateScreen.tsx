@@ -48,7 +48,7 @@ function defaultEventName(currentCount: number): string {
 }
 
 export default function CreateScreen({ navigation, route }: CreateScreenProps) {
-  const { fromShareId, templateId, copyFromShareId, templateEditId } = route.params ?? {}
+  const { fromShareId, templateId, copyFromShareId, templateEditId, resumeDraftShareId } = route.params ?? {}
   const isEdit = !!fromShareId
   const isTemplateEdit = !!templateEditId
 
@@ -79,6 +79,12 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
   const [pickerDate, setPickerDate] = useState(new Date())
   const [deviceId, setDeviceId] = useState<string | null>(null)
 
+  // オートセーブ（下書き）用：一度作成した下書きルームのshareIdを保持し、以降はそれをupdateし続ける
+  const draftShareIdRef = useRef<string | null>(null)
+  const draftDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const autosaveChainRef = useRef<Promise<void>>(Promise.resolve())
+  const [draftSaving, setDraftSaving] = useState(false)
+
   useEffect(() => {
     getDeviceId().then(setDeviceId)
   }, [])
@@ -92,8 +98,11 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
       loadFromRoomCopy(copyFromShareId)
     } else if (templateEditId) {
       loadForTemplateEdit(templateEditId)
+    } else if (resumeDraftShareId) {
+      draftShareIdRef.current = resumeDraftShareId
+      loadFromRoom(resumeDraftShareId)
     }
-  }, [fromShareId, templateId, copyFromShareId, templateEditId])
+  }, [fromShareId, templateId, copyFromShareId, templateEditId, resumeDraftShareId])
 
   useLayoutEffect(() => {
     if (isTemplateEdit) {
@@ -465,56 +474,103 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
     }
   }
 
+  // createRoom/updateRoom共通の入力データを構築（device_idは呼び出し側で付与）
+  function buildRoomInput() {
+    const validEntries = participants.map((p, idx) => ({ p, idx })).filter(({ p }) => p.name.trim() !== '')
+    return {
+      event_date: eventDate.trim() || null,
+      tilt_ratio: parseFloat(tiltRatio) || 2.0,
+      manual_mode: manualMode,
+      events: events.map((ev, i) => {
+        const payerValidIdx = (() => {
+          const rawIdx = ev.payerParticipantIdx ?? null
+          if (rawIdx === null) return null
+          const validIdx = validEntries.findIndex(({ idx }) => idx === rawIdx)
+          return validIdx >= 0 ? validIdx : null
+        })()
+        return {
+          name: ev.name.trim() || `${i + 1}次会`,
+          total_amount: Number(ev.totalAmount) || 0,
+          sort_order: i,
+          split_mode: ev.splitMode ?? 'tilt',
+          payer_participant_idx: payerValidIdx,
+        }
+      }),
+      participants: validEntries.map(({ p, idx }) => ({
+        name: p.name.trim(),
+        role: p.role,
+        tenure_years: p.role === 'その他役職' && p.tenure_years ? Number(p.tenure_years) : null,
+        fixed_amount: p.fixed_amount ? Number(p.fixed_amount) : null,
+        is_organizer: idx === organizerIdx,
+        manual_multiplier: parseFloat(p.manual_multiplier) || 1.0,
+      })),
+      attendances: validEntries.map(({ p }) => events.map((_, eIdx) => p.attendances[eIdx] ?? true)),
+    }
+  }
+
+  // オートセーブ対象か（下書きが空のまま部屋を乱造しないための最低条件）
+  const hasMinimalDraftContent = () =>
+    participants.some((p) => p.name.trim() !== '') || Number(events[0]?.totalAmount) > 0
+
+  // 手動の「確定」保存と競合しないよう、下書き保存は常に直列実行する
+  const queueAutosave = () => {
+    autosaveChainRef.current = autosaveChainRef.current.then(async () => {
+      if (!hasMinimalDraftContent()) return
+      setDraftSaving(true)
+      try {
+        const input = buildRoomInput()
+        if (draftShareIdRef.current) {
+          await updateRoom(draftShareIdRef.current, input)
+        } else {
+          const draftDeviceId = await getDeviceId()
+          draftShareIdRef.current = await createRoom({ ...input, device_id: draftDeviceId })
+        }
+      } catch (e) {
+        console.warn('[autosave] 下書きの保存に失敗しました', e)
+      } finally {
+        setDraftSaving(false)
+      }
+    })
+  }
+
+  useEffect(() => {
+    if (isEdit || isTemplateEdit || initialLoading) return
+    if (draftDebounceRef.current) clearTimeout(draftDebounceRef.current)
+    draftDebounceRef.current = setTimeout(queueAutosave, 800)
+    return () => {
+      if (draftDebounceRef.current) clearTimeout(draftDebounceRef.current)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [participants, events, eventDate, tiltRatio, manualMode, isEdit, isTemplateEdit, initialLoading])
+
   const handleSubmit = async () => {
     setError('')
     if (!Number(events[0]?.totalAmount) || Number(events[0].totalAmount) <= 0) {
       setError('1次会の総額を入力してください')
       return
     }
-    const validEntries = participants.map((p, idx) => ({ p, idx })).filter(({ p }) => p.name.trim() !== '')
+    const validEntries = participants.map((p) => p).filter((p) => p.name.trim() !== '')
     if (validEntries.length < 1) {
       setError('参加者を1人以上入力してください')
       return
     }
     setLoading(true)
     try {
-      const deviceId = await getDeviceId()
-      const input = {
-        event_date: eventDate.trim() || null,
-        tilt_ratio: parseFloat(tiltRatio) || 2.0,
-        manual_mode: manualMode,
-        device_id: isEdit ? undefined : deviceId,
-        events: events.map((ev, i) => {
-          const payerValidIdx = (() => {
-            const rawIdx = ev.payerParticipantIdx ?? null
-            if (rawIdx === null) return null
-            const validIdx = validEntries.findIndex(({ idx }) => idx === rawIdx)
-            return validIdx >= 0 ? validIdx : null
-          })()
-          return {
-            name: ev.name.trim() || `${i + 1}次会`,
-            total_amount: Number(ev.totalAmount) || 0,
-            sort_order: i,
-            split_mode: ev.splitMode ?? 'tilt',
-            payer_participant_idx: payerValidIdx,
-          }
-        }),
-        participants: validEntries.map(({ p, idx }) => ({
-          name: p.name.trim(),
-          role: p.role,
-          tenure_years: p.role === 'その他役職' && p.tenure_years ? Number(p.tenure_years) : null,
-          fixed_amount: p.fixed_amount ? Number(p.fixed_amount) : null,
-          is_organizer: idx === organizerIdx,
-          manual_multiplier: parseFloat(p.manual_multiplier) || 1.0,
-        })),
-        attendances: validEntries.map(({ p }) => events.map((_, eIdx) => p.attendances[eIdx] ?? true)),
-      }
+      // 進行中/待機中のオートセーブと同じ部屋を同時更新しないよう完了を待つ
+      if (draftDebounceRef.current) clearTimeout(draftDebounceRef.current)
+      await autosaveChainRef.current
+      const input = buildRoomInput()
       if (isEdit && fromShareId) {
         await updateRoom(fromShareId, input)
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
         navigation.replace('Room', { shareId: fromShareId })
+      } else if (draftShareIdRef.current) {
+        await updateRoom(draftShareIdRef.current, input)
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
+        navigation.replace('Room', { shareId: draftShareIdRef.current })
       } else {
-        const newShareId = await createRoom(input)
+        const deviceId = await getDeviceId()
+        const newShareId = await createRoom({ ...input, device_id: deviceId })
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
         navigation.replace('Room', { shareId: newShareId })
       }
@@ -539,6 +595,13 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
         onScrollBeginDrag={() => setSuggestions(null)}
       >
         <Pressable onPress={() => { if (suggestions !== null) setSuggestions(null); Keyboard.dismiss() }}>
+
+          {!isEdit && !isTemplateEdit && draftSaving && (
+            <View style={styles.draftSavingRow}>
+              <ActivityIndicator size="small" color="#9ca3af" />
+              <Text style={styles.draftSavingText}>保存中...</Text>
+            </View>
+          )}
 
           {/* テンプレート名（テンプレート編集モードのみ） */}
           {isTemplateEdit && (
@@ -1034,6 +1097,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f5f5' },
   content: { padding: 16 },
   keyboardDoneBar: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, backgroundColor: '#f8f8fa', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#d1d5db' },
+  draftSavingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6, marginBottom: 8 },
+  draftSavingText: { fontSize: 12, color: '#9ca3af' },
   keyboardDoneBarText: { color: '#e97316', fontSize: 16, fontWeight: '700' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
