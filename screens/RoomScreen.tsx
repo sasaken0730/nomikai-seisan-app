@@ -580,7 +580,7 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
 
       <TouchableOpacity
         style={styles.newBtn}
-        onPress={() => navigation.reset({ index: 1, routes: [{ name: 'Home' }, { name: 'Create', params: {} }] })}
+        onPress={() => navigation.reset({ index: 0, routes: [{ name: 'Home' }] })}
       >
         <Text style={styles.newBtnText}>↩ 新しい精算を始める</Text>
       </TouchableOpacity>
