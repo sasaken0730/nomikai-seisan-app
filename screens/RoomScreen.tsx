@@ -318,8 +318,6 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
       lines.push(`（${events.map((ev) => `${ev.name}：${splitModeLabel(ev)}`).join('、')}）`)
     }
 
-    lines.push('')
-    lines.push(`傾斜精算くん https://nomikai-seisan.vercel.app/room/${shareId}`)
     return lines.join('\n')
   }
 
@@ -580,7 +578,10 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
         )}
       </View>
 
-      <TouchableOpacity style={styles.newBtn} onPress={() => navigation.navigate('Create', {})}>
+      <TouchableOpacity
+        style={styles.newBtn}
+        onPress={() => navigation.reset({ index: 1, routes: [{ name: 'Home' }, { name: 'Create', params: {} }] })}
+      >
         <Text style={styles.newBtnText}>↩ 新しい精算を始める</Text>
       </TouchableOpacity>
 
