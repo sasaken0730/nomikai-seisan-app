@@ -46,6 +46,10 @@ function padEnd(str: string, width: number): string {
   return str + ' '.repeat(Math.max(1, width - displayWidth(str)))
 }
 
+function padStart(str: string, width: number): string {
+  return ' '.repeat(Math.max(1, width - displayWidth(str))) + str
+}
+
 interface RoomData {
   id: string
   event_date: string | null
@@ -251,49 +255,78 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
 
   const sortedResults = [...results].sort((a, b) => b.payment - a.payment)
 
-  const buildBreakdownText = (): string => {
+  function splitModeLabel(ev: EventInput): string {
+    if (ev.splitMode === 'equal') return '均等割'
+    return manualMode ? '手動配分' : `傾斜${gradient.toFixed(1)}倍`
+  }
+
+  const buildResultText = (): string => {
     const lines: string[] = []
-    lines.push(`⚖️ 傾斜精算${room.event_date ? '　' + room.event_date : ''}`)
-    lines.push(`参加者${participants.length}名／合計${grandTotal.toLocaleString()}円／傾斜${gradient.toFixed(1)}倍`)
+    lines.push(`【傾斜精算 結果】${room.event_date ?? ''}`.trimEnd())
     lines.push('')
-    lines.push('【精算金額】')
-    const nameWidth = Math.max(...sortedResults.map((r) => displayWidth(r.name)), 8) + 2
-    sortedResults.forEach((r) => {
-      lines.push(`${padEnd(r.name, nameWidth)}${r.payment.toLocaleString()}円`)
+    lines.push('■ 合計')
+    results.forEach((r) => {
+      lines.push(`${r.name}（${getRoleBadgeLabel(r.role, r.tenure_years)}）　¥${r.payment.toLocaleString()}`)
     })
-    if (events.length > 1) {
-      lines.push('')
-      lines.push('【内訳】')
-      lines.push(['名前', ...events.map((e) => e.name), '合計'].join('\t'))
+    lines.push('―'.repeat(21))
+    lines.push(`総額　¥${grandTotal.toLocaleString()}`)
+    const average = participants.length > 0 ? Math.round(grandTotal / participants.length) : 0
+    lines.push(`一人平均　¥${average.toLocaleString()}`)
+    lines.push('')
+
+    if (events.length <= 1 && events[0]) {
+      const ev = events[0]
+      lines.push('■ 内訳')
+      lines.push(`・${ev.name}（¥${ev.amount.toLocaleString()}、${splitModeLabel(ev)}）`)
       results.forEach((r) => {
-        lines.push(
-          [r.name, ...r.perEventPayment.map((a) => (a != null ? a.toLocaleString() : '—')), r.payment.toLocaleString()].join('\t')
-        )
+        lines.push(`${r.name}　¥${r.payment.toLocaleString()}`)
       })
+    } else if (events.length > 1) {
+      lines.push('■ 内訳（マトリクス表）')
+      const nameWidth = Math.max(...results.map((r) => displayWidth(r.name)), displayWidth('名前'), displayWidth('合計')) + 1
+      const colWidths = events.map((ev, idx) =>
+        Math.max(
+          displayWidth(ev.name),
+          ...results.map((r) => {
+            const amt = r.perEventPayment[idx]
+            return displayWidth(amt != null ? `¥${amt.toLocaleString()}` : '-')
+          }),
+          displayWidth(`¥${ev.amount.toLocaleString()}`)
+        ) + 1
+      )
+      const totalColWidth = Math.max(displayWidth('合計'), ...results.map((r) => displayWidth(`¥${r.payment.toLocaleString()}`)), displayWidth(`¥${grandTotal.toLocaleString()}`)) + 1
+
+      lines.push(
+        padEnd('名前', nameWidth) +
+          events.map((ev, i) => padStart(ev.name, colWidths[i])).join('') +
+          padStart('合計', totalColWidth)
+      )
+      results.forEach((r) => {
+        const cells = events.map((_, i) => {
+          const amt = r.perEventPayment[i]
+          return padStart(amt != null ? `¥${amt.toLocaleString()}` : '-', colWidths[i])
+        })
+        lines.push(padEnd(r.name, nameWidth) + cells.join('') + padStart(`¥${r.payment.toLocaleString()}`, totalColWidth))
+      })
+      const totalWidth = nameWidth + colWidths.reduce((s, w) => s + w, 0) + totalColWidth
+      lines.push('―'.repeat(Math.max(10, Math.round(totalWidth / 2))))
+      lines.push(
+        padEnd('合計', nameWidth) +
+          events.map((ev, i) => padStart(`¥${ev.amount.toLocaleString()}`, colWidths[i])).join('') +
+          padStart(`¥${grandTotal.toLocaleString()}`, totalColWidth)
+      )
+      lines.push(`（${events.map((ev) => `${ev.name}：${splitModeLabel(ev)}`).join('、')}）`)
     }
+
     lines.push('')
     lines.push(`傾斜精算くん https://nomikai-seisan.vercel.app/room/${shareId}`)
     return lines.join('\n')
   }
 
-  const buildSummaryText = (): string => {
-    const lines: string[] = []
-    lines.push(`⚖️ 傾斜精算${room.event_date ? '　' + room.event_date : ''}`)
-    lines.push(`合計${grandTotal.toLocaleString()}円／${participants.length}名`)
-    sortedResults.forEach((r) => lines.push(`${r.name}：${r.payment.toLocaleString()}円`))
-    return lines.join('\n')
-  }
-
-  const handleCopyBreakdown = async () => {
-    await Clipboard.setStringAsync(buildBreakdownText())
+  const handleCopyResult = async () => {
+    await Clipboard.setStringAsync(buildResultText())
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
-    showToast('内訳をコピーしました')
-  }
-
-  const handleCopySummary = async () => {
-    await Clipboard.setStringAsync(buildSummaryText())
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
-    showToast('サマリーをコピーしました')
+    showToast('コピーしました')
   }
 
   // 傾斜パターン比較（manualMode 時は傾斜倍率が効かないので非表示）
@@ -532,11 +565,8 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
         <TouchableOpacity style={styles.actionBtn} onPress={handleShare}>
           <Text style={styles.actionBtnText}>🔗 URLを共有</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.actionBtn, styles.actionBtnCopy]} onPress={handleCopyBreakdown}>
-          <Text style={[styles.actionBtnText, styles.actionBtnCopyText]}>📋 内訳をコピー</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionBtn} onPress={handleCopySummary}>
-          <Text style={styles.actionBtnText}>📄 サマリーをコピー</Text>
+        <TouchableOpacity style={[styles.actionBtn, styles.actionBtnCopy]} onPress={handleCopyResult}>
+          <Text style={[styles.actionBtnText, styles.actionBtnCopyText]}>📋 精算結果をコピー</Text>
         </TouchableOpacity>
         {room.is_saved && (
           <View style={[styles.actionBtn, styles.actionBtnSaved]}>

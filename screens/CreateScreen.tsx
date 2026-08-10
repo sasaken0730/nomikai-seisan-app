@@ -558,7 +558,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>飲み会・イベント名</Text>
             <View style={styles.eventDateRow}>
-              <TouchableOpacity style={styles.calendarBtn} onPress={() => setShowDatePicker(true)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <TouchableOpacity style={styles.calendarBtn} onPress={() => setShowDatePicker(true)} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
                 <Text style={styles.calendarBtnText}>📅</Text>
               </TouchableOpacity>
               <TextInput
@@ -586,7 +586,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
             </View>
             {!manualMode && (
               <>
-                <TouchableOpacity style={styles.selector} onPress={() => setTiltModalOpen(true)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                <TouchableOpacity style={styles.selector} onPress={() => setTiltModalOpen(true)} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
                   <Text style={styles.selectorText}>{tiltRatio}倍{tiltRatio === '2.0' ? '（推奨）' : ''}</Text>
                   <Text style={styles.selectorArrow}>▼</Text>
                 </TouchableOpacity>
@@ -609,7 +609,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
             {events.map((ev, eIdx) => (
               <View key={eIdx} style={styles.eventCard}>
                 <View style={styles.row}>
-                  <TouchableOpacity style={styles.eventNameRow} onPress={() => setPresetModalIdx(eIdx)} hitSlop={{ top: 4, bottom: 4, left: 0, right: 4 }}>
+                  <View style={styles.eventNameRow}>
                     <TextInput
                       style={[styles.input, styles.flex1]}
                       value={ev.name}
@@ -617,8 +617,14 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                       placeholder="例：1次会"
                       placeholderTextColor="#9ca3af"
                     />
-                    <Text style={styles.dropArrow}>▼</Text>
-                  </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.dropArrowBtn}
+                      onPress={() => setPresetModalIdx(eIdx)}
+                      hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
+                    >
+                      <Text style={styles.dropArrow}>▼</Text>
+                    </TouchableOpacity>
+                  </View>
                   {eIdx > 0 && (
                     <TouchableOpacity onPress={() => removeEvent(eIdx)} style={styles.removeBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                       <Text style={styles.removeBtnText}>✕</Text>
@@ -636,9 +642,6 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                     inputAccessoryViewID={Platform.OS === 'ios' ? NUMERIC_ACCESSORY_ID : undefined}
                   />
                   <Text style={styles.unit}>円</Text>
-                  <TouchableOpacity style={styles.okBtn} onPress={() => Keyboard.dismiss()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                    <Text style={styles.okBtnText}>✓</Text>
-                  </TouchableOpacity>
                 </View>
                 {eIdx === 0 && !isTemplateEdit && <Text style={styles.required}>※ 1次会は必須です</Text>}
                 <View style={styles.splitRow}>
@@ -675,7 +678,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                       />
                       <TouchableOpacity
                         style={styles.memberPickerBtn}
-                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                        hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
                         onPress={async () => {
                           if (!deviceId) return
                           const list = await getRecentMembers(deviceId)
@@ -709,12 +712,12 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
 
                 {/* 役職 or 倍率 */}
                 {!manualMode ? (
-                  <TouchableOpacity style={styles.selector} onPress={() => setRoleModalIdx(i)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                  <TouchableOpacity style={styles.selector} onPress={() => setRoleModalIdx(i)} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
                     <Text style={styles.selectorText}>{p.role}{ROLE_EQUIVALENT_YEARS[p.role] ? `（${ROLE_EQUIVALENT_YEARS[p.role]}年換算）` : '（年次入力）'}</Text>
                     <Text style={styles.selectorArrow}>▼</Text>
                   </TouchableOpacity>
                 ) : (
-                  <TouchableOpacity style={styles.selector} onPress={() => setMultiplierModalIdx(i)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                  <TouchableOpacity style={styles.selector} onPress={() => setMultiplierModalIdx(i)} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
                     <Text style={styles.selectorText}>{p.manual_multiplier}倍</Text>
                     <Text style={styles.selectorArrow}>▼</Text>
                   </TouchableOpacity>
@@ -743,9 +746,6 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                       inputAccessoryViewID={Platform.OS === 'ios' ? NUMERIC_ACCESSORY_ID : undefined}
                     />
                     <Text style={styles.unit}>円固定</Text>
-                    <TouchableOpacity style={styles.okBtn} onPress={() => Keyboard.dismiss()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                      <Text style={styles.okBtnText}>✓</Text>
-                    </TouchableOpacity>
                   </View>
                 )}
                 {(manualMode || p.role !== 'その他役職') && (
@@ -760,9 +760,6 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                       inputAccessoryViewID={Platform.OS === 'ios' ? NUMERIC_ACCESSORY_ID : undefined}
                     />
                     <Text style={styles.unit}>円固定</Text>
-                    <TouchableOpacity style={styles.okBtn} onPress={() => Keyboard.dismiss()} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                      <Text style={styles.okBtnText}>✓</Text>
-                    </TouchableOpacity>
                   </View>
                 )}
               </View>
@@ -1062,14 +1059,13 @@ const styles = StyleSheet.create({
   tiltHelpCloseBtn: { marginHorizontal: 24, marginTop: 4, backgroundColor: '#f3f4f6', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
   tiltHelpCloseBtnText: { fontSize: 14, fontWeight: '700', color: '#374151' },
   eventCard: { borderWidth: 1, borderColor: '#fed7aa', borderRadius: 12, padding: 12, marginBottom: 10, backgroundColor: '#fff7ed' },
-  eventNameRow: { flex: 1, flexDirection: 'row', alignItems: 'center' },
-  dropArrow: { position: 'absolute', right: 10, color: '#9ca3af', fontSize: 12 },
+  eventNameRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4 },
+  dropArrowBtn: { paddingHorizontal: 6, paddingVertical: 8 },
+  dropArrow: { color: '#9ca3af', fontSize: 13 },
   removeBtn: { padding: 6 },
   removeBtnText: { color: '#d1d5db', fontSize: 16 },
   amountRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   unit: { fontSize: 13, color: '#6b7280', minWidth: 36 },
-  okBtn: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#e97316', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  okBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
   required: { fontSize: 11, color: '#fb923c', marginTop: 4 },
   splitRow: { flexDirection: 'row', gap: 6, marginTop: 8 },
   splitBtn: { flex: 1, borderWidth: 2, borderColor: '#e5e7eb', borderRadius: 8, paddingVertical: 6, alignItems: 'center' },
