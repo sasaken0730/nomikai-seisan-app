@@ -8,6 +8,7 @@ import EditScreen from '../screens/EditScreen'
 import HistoryScreen from '../screens/HistoryScreen'
 import TemplatesScreen from '../screens/TemplatesScreen'
 import type { RootStackParamList } from './types'
+import { Colors } from '../theme/colors'
 
 const Stack = createNativeStackNavigator<RootStackParamList>()
 
@@ -31,10 +32,10 @@ export default function AppNavigator() {
       <Stack.Navigator
         initialRouteName="Home"
         screenOptions={{
-          headerStyle: { backgroundColor: '#1a1a2e' },
-          headerTintColor: '#fff',
+          headerStyle: { backgroundColor: Colors.primary },
+          headerTintColor: Colors.textOnPrimary,
           headerTitleStyle: { fontWeight: 'bold' },
-          contentStyle: { backgroundColor: '#f5f5f5' },
+          contentStyle: { backgroundColor: Colors.background },
         }}
       >
         <Stack.Screen name="Home" component={HomeScreen} options={{ title: '⚖️ 傾斜精算くん' }} />

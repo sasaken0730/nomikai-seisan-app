@@ -10,6 +10,7 @@ import { supabase } from '../lib/supabase'
 import { applyRoundingPerEvent, ROLE_EQUIVALENT_YEARS, type ParticipantInput, type EventInput } from '../lib/calculations'
 import { updateRoomSaved, saveTemplate } from '../lib/actions'
 import { getDeviceId } from '../lib/deviceId'
+import { Colors } from '../theme/colors'
 
 type Unit = 500 | 1000
 
@@ -119,7 +120,7 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
           onPress={() => navigation.navigate('Edit', { shareId })}
           style={{ paddingHorizontal: 8, paddingVertical: 4 }}
         >
-          <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>← 編集に戻る</Text>
+          <Text style={{ color: Colors.textOnPrimary, fontSize: 14, fontWeight: '600' }}>← 編集に戻る</Text>
         </TouchableOpacity>
       ),
     })
@@ -240,7 +241,7 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
   }
 
   if (loading) {
-    return <View style={styles.center}><ActivityIndicator size="large" color="#e97316" /></View>
+    return <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>
   }
 
   if (!room || participants.length === 0) {
@@ -354,7 +355,7 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
       {!room.is_saved && (
         <TouchableOpacity style={styles.primarySaveCard} onPress={handleSave} disabled={saving} activeOpacity={0.85}>
           {saving ? (
-            <ActivityIndicator color="#fff" />
+            <ActivityIndicator color={Colors.textOnPrimary} />
           ) : (
             <>
               <Text style={styles.primarySaveCardTitle}>💾 この精算を履歴に保存</Text>
@@ -573,7 +574,7 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
         )}
         {Platform.OS === 'ios' && (
           <TouchableOpacity style={[styles.actionBtn, styles.actionBtnTemplate]} onPress={handleSaveTemplate} disabled={savingTemplate}>
-            {savingTemplate ? <ActivityIndicator color="#fff" /> : <Text style={[styles.actionBtnText, styles.actionBtnTemplateText]}>📑 テンプレートとして保存</Text>}
+            {savingTemplate ? <ActivityIndicator color={Colors.textOnPrimary} /> : <Text style={[styles.actionBtnText, styles.actionBtnTemplateText]}>📑 テンプレートとして保存</Text>}
           </TouchableOpacity>
         )}
       </View>
@@ -597,108 +598,108 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
+  container: { flex: 1, backgroundColor: Colors.background },
   content: { padding: 16 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  emptyText: { color: '#6b7280', fontSize: 15 },
-  header: { backgroundColor: '#1e293b', borderRadius: 16, paddingVertical: 22, paddingHorizontal: 20, marginBottom: 14, alignItems: 'center' },
-  headerTitle: { fontSize: 22, fontWeight: '800', color: '#fff' },
+  emptyText: { color: Colors.textSecondary, fontSize: 15 },
+  header: { backgroundColor: Colors.primary, borderRadius: 16, paddingVertical: 22, paddingHorizontal: 20, marginBottom: 14, alignItems: 'center' },
+  headerTitle: { fontSize: 22, fontWeight: '800', color: Colors.textOnPrimary },
   headerSub: { fontSize: 13, color: 'rgba(255,255,255,0.8)', marginTop: 4 },
   headerBadge: { backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4, marginTop: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
-  headerBadgeText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  headerBadgeText: { color: Colors.textOnPrimary, fontSize: 12, fontWeight: '600' },
   primarySaveCard: {
-    backgroundColor: '#16a34a', borderRadius: 16, paddingVertical: 18, alignItems: 'center', marginBottom: 14,
-    shadowColor: '#16a34a', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 4,
+    backgroundColor: Colors.success, borderRadius: 16, paddingVertical: 18, alignItems: 'center', marginBottom: 14,
+    shadowColor: Colors.success, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 4,
   },
-  primarySaveCardTitle: { color: '#fff', fontSize: 17, fontWeight: '800' },
+  primarySaveCardTitle: { color: Colors.textOnPrimary, fontSize: 17, fontWeight: '800' },
   primarySaveCardSub: { color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 4 },
   summaryScroll: { marginBottom: 14 },
   summaryRow: { flexDirection: 'row', gap: 10, paddingVertical: 4 },
-  summaryCard: { backgroundColor: '#fff', borderRadius: 12, padding: 12, minWidth: 100, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 1 },
-  summaryTotalCard: { backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#fed7aa' },
-  summaryLabel: { fontSize: 11, color: '#9ca3af', marginBottom: 4 },
-  summaryAmount: { fontSize: 18, fontWeight: '700', color: '#e97316' },
-  summaryTotalAmount: { color: '#dc2626' },
-  summaryUnit: { fontSize: 12, fontWeight: '400', color: '#9ca3af' },
-  card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
-  cardLabel: { fontSize: 13, fontWeight: '600', color: '#6b7280', marginBottom: 10 },
+  summaryCard: { backgroundColor: Colors.card, borderRadius: 12, padding: 12, minWidth: 100, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 1 },
+  summaryTotalCard: { backgroundColor: Colors.accentLight, borderWidth: 1, borderColor: Colors.accentLight },
+  summaryLabel: { fontSize: 11, color: Colors.placeholder, marginBottom: 4 },
+  summaryAmount: { fontSize: 18, fontWeight: '700', color: Colors.primary },
+  summaryTotalAmount: { color: Colors.error },
+  summaryUnit: { fontSize: 12, fontWeight: '400', color: Colors.placeholder },
+  card: { backgroundColor: Colors.card, borderRadius: 16, padding: 16, marginBottom: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
+  cardLabel: { fontSize: 13, fontWeight: '600', color: Colors.textSecondary, marginBottom: 10 },
   unitRow: { flexDirection: 'row', gap: 8 },
-  unitBtn: { flex: 1, borderWidth: 2, borderColor: '#e5e7eb', borderRadius: 8, paddingVertical: 8, alignItems: 'center' },
-  unitBtnActive: { borderColor: '#e97316', backgroundColor: '#e97316' },
-  unitBtnText: { fontSize: 14, fontWeight: '600', color: '#9ca3af' },
-  unitBtnTextActive: { color: '#fff' },
-  resultSectionTitle: { fontSize: 14, fontWeight: '700', color: '#374151', marginBottom: 8, paddingHorizontal: 4 },
+  unitBtn: { flex: 1, borderWidth: 2, borderColor: Colors.border, borderRadius: 8, paddingVertical: 8, alignItems: 'center' },
+  unitBtnActive: { borderColor: Colors.primary, backgroundColor: Colors.primary },
+  unitBtnText: { fontSize: 14, fontWeight: '600', color: Colors.placeholder },
+  unitBtnTextActive: { color: Colors.textOnPrimary },
+  resultSectionTitle: { fontSize: 14, fontWeight: '700', color: Colors.text, marginBottom: 8, paddingHorizontal: 4 },
   resultRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, justifyContent: 'space-between' },
-  resultRowBorder: { borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
+  resultRowBorder: { borderBottomWidth: 1, borderBottomColor: Colors.border },
   resultLeft: { flex: 1 },
-  organizerBadge: { fontSize: 10, color: '#d97706', fontWeight: '700', backgroundColor: '#fef3c7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, alignSelf: 'flex-start', marginBottom: 2 },
-  resultName: { fontSize: 16, fontWeight: '700', color: '#1a1a2e' },
-  roleBadge: { flexDirection: 'row', alignSelf: 'flex-start', backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#fed7aa', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, marginTop: 4 },
-  roleBadgeText: { fontSize: 11, color: '#b45309', fontWeight: '500' },
+  organizerBadge: { fontSize: 10, color: Colors.warning, fontWeight: '700', backgroundColor: Colors.accentLight, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, alignSelf: 'flex-start', marginBottom: 2 },
+  resultName: { fontSize: 16, fontWeight: '700', color: Colors.text },
+  roleBadge: { flexDirection: 'row', alignSelf: 'flex-start', backgroundColor: Colors.accentLight, borderWidth: 1, borderColor: Colors.accentLight, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, marginTop: 4 },
+  roleBadgeText: { fontSize: 11, color: Colors.warning, fontWeight: '500' },
   resultRight: { alignItems: 'flex-end' },
-  resultAmount: { fontSize: 22, fontWeight: '800', color: '#e97316' },
-  resultUnit: { fontSize: 13, fontWeight: '400', color: '#9ca3af' },
-  resultRaw: { fontSize: 11, color: '#9ca3af', marginTop: 2 },
-  tableRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
-  tableCell: { paddingVertical: 10, paddingHorizontal: 8, fontSize: 13, color: '#374151' },
-  tableHeaderCell: { fontWeight: '700', color: '#6b7280', fontSize: 12, backgroundColor: '#f9fafb' },
+  resultAmount: { fontSize: 22, fontWeight: '800', color: Colors.primary },
+  resultUnit: { fontSize: 13, fontWeight: '400', color: Colors.placeholder },
+  resultRaw: { fontSize: 11, color: Colors.placeholder, marginTop: 2 },
+  tableRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: Colors.border },
+  tableCell: { paddingVertical: 10, paddingHorizontal: 8, fontSize: 13, color: Colors.text },
+  tableHeaderCell: { fontWeight: '700', color: Colors.textSecondary, fontSize: 12, backgroundColor: Colors.background },
   tableNameCell: { width: 110 },
   tableNameCellView: { paddingVertical: 8, paddingHorizontal: 8, justifyContent: 'center' },
-  tableNamePrimary: { fontSize: 13, color: '#374151', fontWeight: '500' },
-  tableNameSub: { fontSize: 10, color: '#b45309', marginTop: 2 },
+  tableNamePrimary: { fontSize: 13, color: Colors.text, fontWeight: '500' },
+  tableNameSub: { fontSize: 10, color: Colors.warning, marginTop: 2 },
   tableAmountCell: { width: 80, textAlign: 'right' },
-  tableTotalCell: { fontWeight: '700', color: '#e97316' },
+  tableTotalCell: { fontWeight: '700', color: Colors.primary },
   // 傾斜パターン比較表
-  compTable: { flexDirection: 'row', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, overflow: 'hidden' },
-  compNameCol: { width: 104, borderRightWidth: 1, borderRightColor: '#e5e7eb', backgroundColor: '#f8fafc' },
-  compHeaderCell: { height: 48, justifyContent: 'center', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#e5e7eb', backgroundColor: '#f1f5f9', paddingHorizontal: 6 },
-  compNameDataCell: { minHeight: 58, justifyContent: 'center', paddingHorizontal: 8, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
-  compNameText: { fontSize: 12, fontWeight: '600', color: '#374151' },
-  compOrgLabel: { fontSize: 9, color: '#d97706', fontWeight: '700' },
-  compRoleSub: { fontSize: 10, color: '#b45309', marginTop: 2 },
-  compHeaderRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
-  compGradientHeaderCell: { width: 70, height: 48, justifyContent: 'center', alignItems: 'center', borderRightWidth: 1, borderRightColor: '#e5e7eb', backgroundColor: '#f1f5f9', paddingHorizontal: 4 },
-  compCurrentGradientHeaderCell: { backgroundColor: '#fff7ed', borderRightColor: '#fed7aa' },
-  compHeaderText: { fontSize: 11, fontWeight: '700', color: '#6b7280', textAlign: 'center' },
-  compCurrentHeaderText: { color: '#e97316' },
-  compCurrentLabel: { fontSize: 9, color: '#e97316', fontWeight: '600', textAlign: 'center', marginTop: 1 },
-  compDataRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
-  compCell: { width: 70, minHeight: 58, justifyContent: 'center', alignItems: 'center', borderRightWidth: 1, borderRightColor: '#f3f4f6', paddingHorizontal: 4 },
-  compCurrentCell: { backgroundColor: '#fff7ed' },
-  compCellText: { fontSize: 12, fontWeight: '500', color: '#374151', textAlign: 'center' },
-  compCurrentCellText: { fontWeight: '700', color: '#e97316' },
-  settlementCard: { backgroundColor: '#eff6ff', borderRadius: 16, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: '#bfdbfe' },
-  settlementTitle: { fontSize: 15, fontWeight: '700', color: '#1e40af', marginBottom: 2 },
-  settlementSub: { fontSize: 12, color: '#6b7280', marginBottom: 10 },
+  compTable: { flexDirection: 'row', borderWidth: 1, borderColor: Colors.border, borderRadius: 10, overflow: 'hidden' },
+  compNameCol: { width: 104, borderRightWidth: 1, borderRightColor: Colors.border, backgroundColor: Colors.background },
+  compHeaderCell: { height: 48, justifyContent: 'center', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: Colors.border, backgroundColor: Colors.background, paddingHorizontal: 6 },
+  compNameDataCell: { minHeight: 58, justifyContent: 'center', paddingHorizontal: 8, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  compNameText: { fontSize: 12, fontWeight: '600', color: Colors.text },
+  compOrgLabel: { fontSize: 9, color: Colors.warning, fontWeight: '700' },
+  compRoleSub: { fontSize: 10, color: Colors.warning, marginTop: 2 },
+  compHeaderRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: Colors.border },
+  compGradientHeaderCell: { width: 70, height: 48, justifyContent: 'center', alignItems: 'center', borderRightWidth: 1, borderRightColor: Colors.border, backgroundColor: Colors.background, paddingHorizontal: 4 },
+  compCurrentGradientHeaderCell: { backgroundColor: Colors.accentLight, borderRightColor: Colors.accentLight },
+  compHeaderText: { fontSize: 11, fontWeight: '700', color: Colors.textSecondary, textAlign: 'center' },
+  compCurrentHeaderText: { color: Colors.primary },
+  compCurrentLabel: { fontSize: 9, color: Colors.primary, fontWeight: '600', textAlign: 'center', marginTop: 1 },
+  compDataRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: Colors.border },
+  compCell: { width: 70, minHeight: 58, justifyContent: 'center', alignItems: 'center', borderRightWidth: 1, borderRightColor: Colors.border, paddingHorizontal: 4 },
+  compCurrentCell: { backgroundColor: Colors.accentLight },
+  compCellText: { fontSize: 12, fontWeight: '500', color: Colors.text, textAlign: 'center' },
+  compCurrentCellText: { fontWeight: '700', color: Colors.primary },
+  settlementCard: { backgroundColor: Colors.infoLight, borderRadius: 16, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: Colors.info },
+  settlementTitle: { fontSize: 15, fontWeight: '700', color: Colors.info, marginBottom: 2 },
+  settlementSub: { fontSize: 12, color: Colors.textSecondary, marginBottom: 10 },
   payerBadgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
-  payerBadge: { backgroundColor: '#dbeafe', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3 },
-  payerBadgeText: { fontSize: 11, color: '#1d4ed8' },
-  transferRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 12, marginBottom: 6 },
+  payerBadge: { backgroundColor: Colors.infoLight, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3 },
+  payerBadgeText: { fontSize: 11, color: Colors.info },
+  transferRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: Colors.card, borderRadius: 12, padding: 12, marginBottom: 6 },
   transferLeft: { flexDirection: 'row', alignItems: 'center', flex: 1, flexWrap: 'wrap' },
-  transferFrom: { fontSize: 14, fontWeight: '600', color: '#374151' },
-  transferArrow: { fontSize: 14, color: '#9ca3af' },
-  transferTo: { fontSize: 14, fontWeight: '600', color: '#1d4ed8' },
-  transferAmount: { fontSize: 18, fontWeight: '700', color: '#2563eb', marginLeft: 8 },
-  transferUnit: { fontSize: 12, fontWeight: '400', color: '#9ca3af' },
-  actionsCard: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
-  actionsTitle: { fontSize: 14, fontWeight: '700', color: '#374151', marginBottom: 10 },
-  actionBtn: { borderWidth: 1.5, borderColor: '#e5e7eb', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginBottom: 8 },
-  actionBtnText: { fontSize: 14, fontWeight: '600', color: '#374151' },
-  actionBtnCopy: { backgroundColor: '#eff6ff', borderColor: '#bfdbfe' },
-  actionBtnCopyText: { color: '#1d4ed8' },
-  actionBtnSaved: { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' },
-  actionBtnSavedText: { color: '#16a34a' },
-  actionBtnTemplate: { backgroundColor: '#7c3aed', borderColor: '#7c3aed' },
-  actionBtnTemplateText: { color: '#fff' },
-  newBtn: { borderWidth: 2, borderColor: '#fed7aa', borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 10, marginBottom: 14 },
-  newBtnText: { color: '#e97316', fontSize: 15, fontWeight: '700' },
-  hint: { fontSize: 13, color: '#9ca3af', textAlign: 'center' },
+  transferFrom: { fontSize: 14, fontWeight: '600', color: Colors.text },
+  transferArrow: { fontSize: 14, color: Colors.placeholder },
+  transferTo: { fontSize: 14, fontWeight: '600', color: Colors.info },
+  transferAmount: { fontSize: 18, fontWeight: '700', color: Colors.info, marginLeft: 8 },
+  transferUnit: { fontSize: 12, fontWeight: '400', color: Colors.placeholder },
+  actionsCard: { backgroundColor: Colors.card, borderRadius: 16, padding: 16, marginBottom: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
+  actionsTitle: { fontSize: 14, fontWeight: '700', color: Colors.text, marginBottom: 10 },
+  actionBtn: { borderWidth: 1.5, borderColor: Colors.border, borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginBottom: 8 },
+  actionBtnText: { fontSize: 14, fontWeight: '600', color: Colors.text },
+  actionBtnCopy: { backgroundColor: Colors.infoLight, borderColor: Colors.info },
+  actionBtnCopyText: { color: Colors.info },
+  actionBtnSaved: { backgroundColor: Colors.successLight, borderColor: Colors.success },
+  actionBtnSavedText: { color: Colors.success },
+  actionBtnTemplate: { backgroundColor: Colors.info, borderColor: Colors.info },
+  actionBtnTemplateText: { color: Colors.textOnPrimary },
+  newBtn: { borderWidth: 2, borderColor: Colors.accentLight, borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 10, marginBottom: 14 },
+  newBtnText: { color: Colors.primary, fontSize: 15, fontWeight: '700' },
+  hint: { fontSize: 13, color: Colors.placeholder, textAlign: 'center' },
   compHintRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 0 },
-  resetGradBtn: { backgroundColor: '#f1f5f9', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: '#e2e8f0' },
-  resetGradBtnText: { fontSize: 11, color: '#64748b', fontWeight: '600' },
+  resetGradBtn: { backgroundColor: Colors.background, borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4, borderWidth: 1, borderColor: Colors.border },
+  resetGradBtnText: { fontSize: 11, color: Colors.textSecondary, fontWeight: '600' },
   toast: {
     position: 'absolute', bottom: 32, left: 24, right: 24, alignItems: 'center',
-    backgroundColor: 'rgba(26,26,46,0.92)', borderRadius: 24, paddingVertical: 12, paddingHorizontal: 20,
+    backgroundColor: 'rgba(22,41,140,0.92)', borderRadius: 24, paddingVertical: 12, paddingHorizontal: 20,
   },
-  toastText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  toastText: { color: Colors.textOnPrimary, fontSize: 14, fontWeight: '600' },
 })
