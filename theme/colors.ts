@@ -16,8 +16,8 @@ export const Colors = {
   errorLight: '#FEF2F2',
   warning: '#F2900E', // 橙 - 旧アクセント色の後継。注意喚起のみに限定使用
   warningLight: '#FFF3E0',
-  info: '#2563EB', // 青 - コピー・共有などの情報系アクション
-  infoLight: '#EFF6FF',
+  info: '#16298C', // 紺（primaryと同色）- コピー・共有などの情報系アクション。モノクロマティック配色に統一
+  infoLight: '#EEF1FB', // 薄紺（primaryLightと同色）
 
   // ニュートラル
   background: '#F4F6FB', // 画面背景
