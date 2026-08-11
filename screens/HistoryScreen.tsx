@@ -8,6 +8,7 @@ import type { HistoryScreenProps } from '../navigation/types'
 import { supabase } from '../lib/supabase'
 import { getDeviceId } from '../lib/deviceId'
 import { deleteRoom } from '../lib/actions'
+import { Colors } from '../theme/colors'
 
 interface HistoryItem {
   share_id: string
@@ -85,7 +86,7 @@ export default function HistoryScreen({ navigation }: HistoryScreenProps) {
   }
 
   if (loading) {
-    return <View style={styles.center}><ActivityIndicator size="large" color="#e97316" /></View>
+    return <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>
   }
 
   return (
@@ -93,7 +94,7 @@ export default function HistoryScreen({ navigation }: HistoryScreenProps) {
       data={items}
       keyExtractor={(item) => item.share_id}
       contentContainerStyle={items.length === 0 ? styles.emptyContainer : styles.listContent}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadHistory(true)} tintColor="#e97316" />}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadHistory(true)} tintColor={Colors.primary} />}
       ListHeaderComponent={
         items.length > 0 ? (
           <View style={styles.guidanceBanner}>
@@ -147,31 +148,31 @@ export default function HistoryScreen({ navigation }: HistoryScreenProps) {
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f5f5f5' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.background },
   listContent: { padding: 16, gap: 12 },
   emptyContainer: { flex: 1, padding: 16 },
-  guidanceBanner: { backgroundColor: '#f0fdf4', borderRadius: 12, padding: 12, marginBottom: 4, borderWidth: 1, borderColor: '#bbf7d0' },
-  guidanceText: { fontSize: 12, color: '#16a34a', lineHeight: 18 },
+  guidanceBanner: { backgroundColor: Colors.successLight, borderRadius: 12, padding: 12, marginBottom: 4, borderWidth: 1, borderColor: Colors.success },
+  guidanceText: { fontSize: 12, color: Colors.success, lineHeight: 18 },
   emptyBox: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80 },
   emptyIcon: { fontSize: 48, marginBottom: 12 },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: '#374151', marginBottom: 8 },
-  emptyDesc: { fontSize: 14, color: '#9ca3af', textAlign: 'center', marginBottom: 24, paddingHorizontal: 20, lineHeight: 22 },
-  emptyBtn: { backgroundColor: '#e97316', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 24 },
-  emptyBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  card: { backgroundColor: '#fff', borderRadius: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2, overflow: 'hidden' },
+  emptyTitle: { fontSize: 18, fontWeight: '700', color: Colors.text, marginBottom: 8 },
+  emptyDesc: { fontSize: 14, color: Colors.placeholder, textAlign: 'center', marginBottom: 24, paddingHorizontal: 20, lineHeight: 22 },
+  emptyBtn: { backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 24 },
+  emptyBtnText: { color: Colors.textOnPrimary, fontSize: 15, fontWeight: '700' },
+  card: { backgroundColor: Colors.card, borderRadius: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2, overflow: 'hidden' },
   cardMain: { padding: 16 },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 },
   cardInfo: { flex: 1 },
-  cardDate: { fontSize: 15, fontWeight: '700', color: '#1a1a2e', marginBottom: 4 },
-  cardDateGray: { fontSize: 15, fontWeight: '700', color: '#9ca3af', marginBottom: 4 },
-  cardMeta: { fontSize: 12, color: '#9ca3af' },
+  cardDate: { fontSize: 15, fontWeight: '700', color: Colors.text, marginBottom: 4 },
+  cardDateGray: { fontSize: 15, fontWeight: '700', color: Colors.placeholder, marginBottom: 4 },
+  cardMeta: { fontSize: 12, color: Colors.placeholder },
   cardRight: { alignItems: 'flex-end' },
-  cardTotal: { fontSize: 20, fontWeight: '800', color: '#e97316' },
-  cardUnit: { fontSize: 12, fontWeight: '400', color: '#9ca3af' },
-  cardCreated: { fontSize: 11, color: '#d1d5db' },
-  cardBottom: { flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: '#f3f4f6' },
-  copyBtn: { flex: 1, paddingVertical: 11, paddingHorizontal: 14, borderRightWidth: 1, borderRightColor: '#f3f4f6' },
-  copyBtnText: { fontSize: 13, color: '#e97316', fontWeight: '600' },
+  cardTotal: { fontSize: 20, fontWeight: '800', color: Colors.primary },
+  cardUnit: { fontSize: 12, fontWeight: '400', color: Colors.placeholder },
+  cardCreated: { fontSize: 11, color: Colors.placeholder },
+  cardBottom: { flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: Colors.border },
+  copyBtn: { flex: 1, paddingVertical: 11, paddingHorizontal: 14, borderRightWidth: 1, borderRightColor: Colors.border },
+  copyBtnText: { fontSize: 13, color: Colors.info, fontWeight: '600' },
   deleteBtn: { paddingVertical: 11, paddingHorizontal: 16 },
-  deleteBtnText: { fontSize: 12, color: '#dc2626', fontWeight: '600' },
+  deleteBtnText: { fontSize: 12, color: Colors.error, fontWeight: '600' },
 })

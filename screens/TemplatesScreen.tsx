@@ -7,6 +7,7 @@ import { useFocusEffect } from '@react-navigation/native'
 import type { TemplatesScreenProps } from '../navigation/types'
 import { getTemplates, deleteTemplate, type TemplateSummary } from '../lib/actions'
 import { getDeviceId } from '../lib/deviceId'
+import { Colors } from '../theme/colors'
 
 export default function TemplatesScreen({ navigation }: TemplatesScreenProps) {
   const [templates, setTemplates] = useState<TemplateSummary[]>([])
@@ -50,7 +51,7 @@ export default function TemplatesScreen({ navigation }: TemplatesScreenProps) {
   }
 
   if (loading) {
-    return <View style={styles.center}><ActivityIndicator size="large" color="#e97316" /></View>
+    return <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>
   }
 
   return (
@@ -59,7 +60,7 @@ export default function TemplatesScreen({ navigation }: TemplatesScreenProps) {
       data={templates}
       keyExtractor={(item) => item.id}
       contentContainerStyle={templates.length === 0 ? styles.emptyContainer : styles.listContent}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadTemplates(true)} tintColor="#e97316" />}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => loadTemplates(true)} tintColor={Colors.primary} />}
       ListEmptyComponent={
         <View style={styles.emptyBox}>
           <Text style={styles.emptyIcon}>📂</Text>
@@ -138,35 +139,35 @@ export default function TemplatesScreen({ navigation }: TemplatesScreenProps) {
 }
 
 const styles = StyleSheet.create({
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f5f5f5' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.background },
   listContent: { padding: 16, gap: 12 },
   emptyContainer: { flex: 1, padding: 16 },
   emptyBox: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80 },
   emptyIcon: { fontSize: 48, marginBottom: 12 },
-  emptyTitle: { fontSize: 18, fontWeight: '700', color: '#374151', marginBottom: 8 },
-  emptyDesc: { fontSize: 14, color: '#9ca3af', textAlign: 'center', marginBottom: 24, paddingHorizontal: 20 },
-  emptyBtn: { backgroundColor: '#e97316', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 24 },
-  emptyBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  card: { backgroundColor: '#fff', borderRadius: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2, overflow: 'hidden' },
+  emptyTitle: { fontSize: 18, fontWeight: '700', color: Colors.text, marginBottom: 8 },
+  emptyDesc: { fontSize: 14, color: Colors.placeholder, textAlign: 'center', marginBottom: 24, paddingHorizontal: 20 },
+  emptyBtn: { backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 24 },
+  emptyBtnText: { color: Colors.textOnPrimary, fontSize: 15, fontWeight: '700' },
+  card: { backgroundColor: Colors.card, borderRadius: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2, overflow: 'hidden' },
   cardBody: { padding: 16 },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  cardName: { fontSize: 16, fontWeight: '700', color: '#1a1a2e', flex: 1, marginRight: 8 },
-  cardBadge: { backgroundColor: '#fff7ed', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
-  cardBadgeText: { fontSize: 11, color: '#e97316', fontWeight: '600' },
-  cardMeta: { fontSize: 12, color: '#9ca3af', marginBottom: 4 },
-  cardParticipants: { fontSize: 13, color: '#6b7280' },
-  cardActions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: '#f3f4f6' },
-  actionBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRightWidth: 1, borderRightColor: '#f3f4f6' },
+  cardName: { fontSize: 16, fontWeight: '700', color: Colors.text, flex: 1, marginRight: 8 },
+  cardBadge: { backgroundColor: Colors.accentLight, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  cardBadgeText: { fontSize: 11, color: Colors.warning, fontWeight: '600' },
+  cardMeta: { fontSize: 12, color: Colors.placeholder, marginBottom: 4 },
+  cardParticipants: { fontSize: 13, color: Colors.textSecondary },
+  cardActions: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: Colors.border },
+  actionBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRightWidth: 1, borderRightColor: Colors.border },
   actionBtnDelete: { borderRightWidth: 0 },
-  actionBtnText: { fontSize: 13, color: '#6b7280', fontWeight: '600' },
-  actionBtnDeleteText: { fontSize: 13, color: '#dc2626', fontWeight: '600' },
+  actionBtnText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
+  actionBtnDeleteText: { fontSize: 13, color: Colors.error, fontWeight: '600' },
   pickerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  pickerModal: { backgroundColor: '#fff', borderRadius: 20, padding: 24, width: '100%', gap: 10 },
-  pickerTitle: { fontSize: 15, fontWeight: '700', color: '#1a1a2e', textAlign: 'center', marginBottom: 4 },
-  pickerBtn: { borderWidth: 2, borderColor: '#e5e7eb', borderRadius: 12, paddingVertical: 14, alignItems: 'center', paddingHorizontal: 12 },
-  pickerBtnPrimary: { backgroundColor: '#e97316', borderColor: '#e97316' },
-  pickerBtnText: { fontSize: 15, fontWeight: '600', color: '#374151', textAlign: 'center' },
-  pickerBtnPrimaryText: { color: '#fff' },
+  pickerModal: { backgroundColor: Colors.card, borderRadius: 20, padding: 24, width: '100%', gap: 10 },
+  pickerTitle: { fontSize: 15, fontWeight: '700', color: Colors.text, textAlign: 'center', marginBottom: 4 },
+  pickerBtn: { borderWidth: 2, borderColor: Colors.border, borderRadius: 12, paddingVertical: 14, alignItems: 'center', paddingHorizontal: 12 },
+  pickerBtnPrimary: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  pickerBtnText: { fontSize: 15, fontWeight: '600', color: Colors.text, textAlign: 'center' },
+  pickerBtnPrimaryText: { color: Colors.textOnPrimary },
   pickerCancelBtn: { paddingVertical: 12, alignItems: 'center', marginTop: 2 },
-  pickerCancelText: { fontSize: 14, color: '#9ca3af', fontWeight: '600' },
+  pickerCancelText: { fontSize: 14, color: Colors.placeholder, fontWeight: '600' },
 })

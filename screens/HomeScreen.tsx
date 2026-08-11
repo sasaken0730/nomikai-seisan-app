@@ -5,6 +5,7 @@ import * as Haptics from 'expo-haptics'
 import type { HomeScreenProps } from '../navigation/types'
 import { supabase } from '../lib/supabase'
 import { getDeviceId } from '../lib/deviceId'
+import { Colors } from '../theme/colors'
 
 interface DraftRoom {
   shareId: string
@@ -92,7 +93,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Colors.background,
     padding: 20,
   },
   hero: {
@@ -102,12 +103,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 32,
     fontWeight: '800',
-    color: '#1a1a2e',
+    color: Colors.primary,
     letterSpacing: -0.5,
   },
   subtitle: {
     fontSize: 15,
-    color: '#6b7280',
+    color: Colors.textSecondary,
     marginTop: 6,
   },
   grid: {
@@ -115,15 +116,15 @@ const styles = StyleSheet.create({
   },
   flex1: { flex: 1 },
   draftBanner: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#fed7aa',
+    flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.accentLight, borderWidth: 1, borderColor: Colors.accentLight,
     borderRadius: 14, padding: 14, marginBottom: 16, gap: 10,
   },
   draftBannerIcon: { fontSize: 22 },
-  draftBannerTitle: { fontSize: 14, fontWeight: '700', color: '#9a3412' },
-  draftBannerSub: { fontSize: 12, color: '#c2410c', marginTop: 2 },
-  draftBannerArrow: { fontSize: 22, color: '#fb923c', fontWeight: '700' },
+  draftBannerTitle: { fontSize: 14, fontWeight: '700', color: Colors.warning },
+  draftBannerSub: { fontSize: 12, color: Colors.warning, marginTop: 2 },
+  draftBannerArrow: { fontSize: 22, color: Colors.warning, fontWeight: '700' },
   card: {
-    backgroundColor: '#fff',
+    backgroundColor: Colors.card,
     borderRadius: 16,
     padding: 20,
     shadowColor: '#000',
@@ -133,26 +134,26 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   primaryCard: {
-    backgroundColor: '#1a1a2e',
+    backgroundColor: Colors.primary,
   },
   cardIcon: {
     fontSize: 28,
-    color: '#fff',
+    color: Colors.textOnPrimary,
     marginBottom: 8,
   },
   darkIcon: {
     fontSize: 28,
-    color: '#1a1a2e',
+    color: Colors.primary,
     marginBottom: 8,
   },
   cardTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#fff',
+    color: Colors.textOnPrimary,
     marginBottom: 4,
   },
   darkTitle: {
-    color: '#1a1a2e',
+    color: Colors.primary,
   },
   cardDesc: {
     fontSize: 13,
@@ -160,6 +161,6 @@ const styles = StyleSheet.create({
   },
   cardDescDark: {
     fontSize: 13,
-    color: '#6b7280',
+    color: Colors.textSecondary,
   },
 })

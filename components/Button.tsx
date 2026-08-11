@@ -1,5 +1,6 @@
 import React from 'react'
 import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, ViewStyle } from 'react-native'
+import { Colors } from '../theme/colors'
 
 interface ButtonProps {
   label: string
@@ -11,8 +12,8 @@ interface ButtonProps {
 }
 
 export default function Button({ label, onPress, variant = 'primary', loading = false, disabled = false, style }: ButtonProps) {
-  const bg = variant === 'primary' ? '#1a1a2e' : variant === 'danger' ? '#dc2626' : '#e5e7eb'
-  const color = variant === 'secondary' ? '#1a1a2e' : '#fff'
+  const bg = variant === 'primary' ? Colors.primary : variant === 'danger' ? Colors.error : Colors.border
+  const color = variant === 'secondary' ? Colors.text : Colors.textOnPrimary
 
   return (
     <TouchableOpacity
