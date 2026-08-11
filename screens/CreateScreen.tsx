@@ -11,6 +11,7 @@ import { ROLES, ROLE_EQUIVALENT_YEARS } from '../lib/calculations'
 import { createRoom, updateRoom, saveTemplate, updateTemplate, deleteTemplate, getSuggestions, getRecentMembers, type Suggestion, type TemplateParticipant, type TemplateEvent } from '../lib/actions'
 import { getDeviceId } from '../lib/deviceId'
 import { supabase } from '../lib/supabase'
+import { Colors } from '../theme/colors'
 
 interface ParticipantState {
   name: string
@@ -583,7 +584,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
   }
 
   if (initialLoading) {
-    return <View style={styles.center}><ActivityIndicator size="large" color="#e97316" /></View>
+    return <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>
   }
 
   return (
@@ -598,7 +599,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
 
           {!isEdit && !isTemplateEdit && draftSaving && (
             <View style={styles.draftSavingRow}>
-              <ActivityIndicator size="small" color="#9ca3af" />
+              <ActivityIndicator size="small" color={Colors.placeholder} />
               <Text style={styles.draftSavingText}>保存中...</Text>
             </View>
           )}
@@ -612,7 +613,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                 value={templateName}
                 onChangeText={setTemplateName}
                 placeholder="テンプレート名"
-                placeholderTextColor="#9ca3af"
+                placeholderTextColor={Colors.placeholder}
               />
             </View>
           )}
@@ -629,7 +630,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                 value={eventDate}
                 onChangeText={setEventDate}
                 placeholder={`例：${new Date().getFullYear()}${String(new Date().getMonth()+1).padStart(2,'0')}${String(new Date().getDate()).padStart(2,'0')} 部署飲み`}
-                placeholderTextColor="#9ca3af"
+                placeholderTextColor={Colors.placeholder}
               />
             </View>
           </View>
@@ -678,7 +679,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                       value={ev.name}
                       onChangeText={(v) => updateEvent(eIdx, 'name', v)}
                       placeholder="例：1次会"
-                      placeholderTextColor="#9ca3af"
+                      placeholderTextColor={Colors.placeholder}
                     />
                     <TouchableOpacity
                       style={styles.dropArrowBtn}
@@ -700,7 +701,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                     value={ev.totalAmount}
                     onChangeText={(v) => updateEvent(eIdx, 'totalAmount', v)}
                     placeholder="例: 30000"
-                    placeholderTextColor="#9ca3af"
+                    placeholderTextColor={Colors.placeholder}
                     keyboardType="numeric"
                     inputAccessoryViewID={Platform.OS === 'ios' ? NUMERIC_ACCESSORY_ID : undefined}
                   />
@@ -737,7 +738,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                         onChangeText={(v) => handleNameChange(i, v)}
                         onBlur={() => setTimeout(() => { if (suggestions?.idx === i) setSuggestions(null) }, 200)}
                         placeholder={`参加者${i + 1}の名前`}
-                        placeholderTextColor="#9ca3af"
+                        placeholderTextColor={Colors.placeholder}
                       />
                       <TouchableOpacity
                         style={styles.memberPickerBtn}
@@ -794,7 +795,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                       value={p.tenure_years}
                       onChangeText={(v) => updateParticipant(i, 'tenure_years', v)}
                       placeholder="年次"
-                      placeholderTextColor="#9ca3af"
+                      placeholderTextColor={Colors.placeholder}
                       keyboardType="numeric"
                       inputAccessoryViewID={Platform.OS === 'ios' ? NUMERIC_ACCESSORY_ID : undefined}
                     />
@@ -804,7 +805,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                       value={p.fixed_amount}
                       onChangeText={(v) => updateParticipant(i, 'fixed_amount', v)}
                       placeholder="固定額（省略可）"
-                      placeholderTextColor="#9ca3af"
+                      placeholderTextColor={Colors.placeholder}
                       keyboardType="numeric"
                       inputAccessoryViewID={Platform.OS === 'ios' ? NUMERIC_ACCESSORY_ID : undefined}
                     />
@@ -818,7 +819,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                       value={p.fixed_amount}
                       onChangeText={(v) => updateParticipant(i, 'fixed_amount', v)}
                       placeholder="固定額（省略可）"
-                      placeholderTextColor="#9ca3af"
+                      placeholderTextColor={Colors.placeholder}
                       keyboardType="numeric"
                       inputAccessoryViewID={Platform.OS === 'ios' ? NUMERIC_ACCESSORY_ID : undefined}
                     />
@@ -909,7 +910,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
           {isTemplateEdit ? (
             <View>
               <TouchableOpacity style={[styles.submitBtn, loading && styles.submitBtnDisabled]} onPress={handleSaveTemplateEdit} disabled={loading}>
-                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>💾 保存（上書き）</Text>}
+                {loading ? <ActivityIndicator color={Colors.textOnPrimary} /> : <Text style={styles.submitBtnText}>💾 保存（上書き）</Text>}
               </TouchableOpacity>
               <TouchableOpacity style={[styles.submitBtn, styles.templateSaveAsBtn, loading && styles.submitBtnDisabled]} onPress={handleSaveAsNewTemplate} disabled={loading}>
                 <Text style={styles.submitBtnText}>📋 別名で保存</Text>
@@ -923,7 +924,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
             </View>
           ) : (
             <TouchableOpacity style={[styles.submitBtn, loading && styles.submitBtnDisabled]} onPress={handleSubmit} disabled={loading}>
-              {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitBtnText}>精算内容を確定してURLを発行</Text>}
+              {loading ? <ActivityIndicator color={Colors.textOnPrimary} /> : <Text style={styles.submitBtnText}>精算内容を確定してURLを発行</Text>}
             </TouchableOpacity>
           )}
 
@@ -1081,7 +1082,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                 display="inline"
                 onChange={handleDatePickerChange}
                 locale="ja-JP"
-                accentColor="#e97316"
+                accentColor={Colors.primary}
                 themeVariant="light"
                 style={{ alignSelf: 'center', width: '100%' }}
               />
@@ -1094,120 +1095,120 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
+  container: { flex: 1, backgroundColor: Colors.background },
   content: { padding: 16 },
-  keyboardDoneBar: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, backgroundColor: '#f8f8fa', borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#d1d5db' },
+  keyboardDoneBar: { flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, backgroundColor: Colors.background, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Colors.border },
   draftSavingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6, marginBottom: 8 },
-  draftSavingText: { fontSize: 12, color: '#9ca3af' },
-  keyboardDoneBarText: { color: '#e97316', fontSize: 16, fontWeight: '700' },
+  draftSavingText: { fontSize: 12, color: Colors.placeholder },
+  keyboardDoneBarText: { color: Colors.primary, fontSize: 16, fontWeight: '700' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  card: { backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
-  sectionTitle: { fontSize: 15, fontWeight: '700', color: '#1a1a2e', marginBottom: 12 },
-  input: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: '#111', backgroundColor: '#fff' },
+  card: { backgroundColor: Colors.card, borderRadius: 16, padding: 16, marginBottom: 14, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
+  sectionTitle: { fontSize: 15, fontWeight: '700', color: Colors.primary, marginBottom: 12 },
+  input: { borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: Colors.text, backgroundColor: Colors.card },
   flex1: { flex: 1 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   modeRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
-  modeBtn: { flex: 1, borderWidth: 2, borderColor: '#e5e7eb', borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
-  modeBtnActive: { borderColor: '#e97316', backgroundColor: '#e97316' },
-  modeBtnLabel: { fontSize: 14, fontWeight: '700', color: '#9ca3af' },
-  modeBtnLabelActive: { color: '#fff' },
-  modeBtnSub: { fontSize: 11, color: '#d1d5db', marginTop: 2 },
+  modeBtn: { flex: 1, borderWidth: 2, borderColor: Colors.border, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
+  modeBtnActive: { borderColor: Colors.primary, backgroundColor: Colors.primary },
+  modeBtnLabel: { fontSize: 14, fontWeight: '700', color: Colors.placeholder },
+  modeBtnLabelActive: { color: Colors.textOnPrimary },
+  modeBtnSub: { fontSize: 11, color: Colors.placeholder, marginTop: 2 },
   modeBtnSubActive: { color: 'rgba(255,255,255,0.8)' },
-  selector: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: '#fff' },
-  selectorText: { fontSize: 14, color: '#111', flex: 1 },
-  selectorArrow: { fontSize: 12, color: '#9ca3af', marginLeft: 8 },
-  hint: { fontSize: 12, color: '#9ca3af', marginTop: 4 },
+  selector: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: Colors.card },
+  selectorText: { fontSize: 14, color: Colors.text, flex: 1 },
+  selectorArrow: { fontSize: 12, color: Colors.placeholder, marginLeft: 8 },
+  hint: { fontSize: 12, color: Colors.placeholder, marginTop: 4 },
   tiltExplainRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
-  tiltExplainText: { flex: 1, fontSize: 12, color: '#9ca3af', marginRight: 8 },
-  tiltExplainLink: { fontSize: 12, color: '#e97316', fontWeight: '600' },
-  tiltHelpBody: { fontSize: 14, color: '#374151', lineHeight: 21, marginBottom: 12 },
-  tiltHelpCloseBtn: { marginHorizontal: 24, marginTop: 4, backgroundColor: '#f3f4f6', borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
-  tiltHelpCloseBtnText: { fontSize: 14, fontWeight: '700', color: '#374151' },
-  eventCard: { borderWidth: 1, borderColor: '#fed7aa', borderRadius: 12, padding: 12, marginBottom: 10, backgroundColor: '#fff7ed' },
+  tiltExplainText: { flex: 1, fontSize: 12, color: Colors.placeholder, marginRight: 8 },
+  tiltExplainLink: { fontSize: 12, color: Colors.primary, fontWeight: '600' },
+  tiltHelpBody: { fontSize: 14, color: Colors.text, lineHeight: 21, marginBottom: 12 },
+  tiltHelpCloseBtn: { marginHorizontal: 24, marginTop: 4, backgroundColor: Colors.background, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+  tiltHelpCloseBtnText: { fontSize: 14, fontWeight: '700', color: Colors.text },
+  eventCard: { borderWidth: 1, borderColor: Colors.accentLight, borderRadius: 12, padding: 12, marginBottom: 10, backgroundColor: Colors.accentLight },
   eventNameRow: {
     flex: 1, flexDirection: 'row', alignItems: 'center',
-    borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, backgroundColor: '#fff',
+    borderWidth: 1, borderColor: Colors.border, borderRadius: 10, backgroundColor: Colors.card,
     paddingLeft: 12, paddingRight: 6,
   },
-  eventNameInput: { flex: 1, paddingVertical: 10, fontSize: 15, color: '#111' },
+  eventNameInput: { flex: 1, paddingVertical: 10, fontSize: 15, color: Colors.text },
   dropArrowBtn: { paddingHorizontal: 6, paddingVertical: 8 },
-  dropArrow: { color: '#9ca3af', fontSize: 13 },
+  dropArrow: { color: Colors.placeholder, fontSize: 13 },
   removeBtn: { padding: 6 },
-  removeBtnText: { color: '#d1d5db', fontSize: 16 },
+  removeBtnText: { color: Colors.placeholder, fontSize: 16 },
   amountRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
-  unit: { fontSize: 13, color: '#6b7280', minWidth: 36 },
-  required: { fontSize: 11, color: '#fb923c', marginTop: 4 },
+  unit: { fontSize: 13, color: Colors.textSecondary, minWidth: 36 },
+  required: { fontSize: 11, color: Colors.warning, marginTop: 4 },
   splitRow: { flexDirection: 'row', gap: 6, marginTop: 8 },
-  splitBtn: { flex: 1, borderWidth: 2, borderColor: '#e5e7eb', borderRadius: 8, paddingVertical: 6, alignItems: 'center' },
-  splitBtnTiltActive: { borderColor: '#e97316', backgroundColor: '#e97316' },
-  splitBtnEqualActive: { borderColor: '#3b82f6', backgroundColor: '#3b82f6' },
-  splitBtnText: { fontSize: 12, fontWeight: '600', color: '#9ca3af' },
-  splitBtnTextActive: { color: '#fff' },
-  splitBtnEqualTextActive: { color: '#fff' },
-  addBtn: { borderWidth: 2, borderStyle: 'dashed', borderColor: '#fed7aa', borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
-  addBtnText: { color: '#fb923c', fontSize: 14 },
-  participantCard: { borderWidth: 2, borderColor: '#f3f4f6', borderRadius: 12, padding: 12, marginBottom: 10, backgroundColor: '#f9fafb' },
-  participantCardOrganizer: { borderColor: '#fb923c', backgroundColor: '#fff7ed' },
+  splitBtn: { flex: 1, borderWidth: 2, borderColor: Colors.border, borderRadius: 8, paddingVertical: 6, alignItems: 'center' },
+  splitBtnTiltActive: { borderColor: Colors.primary, backgroundColor: Colors.primary },
+  splitBtnEqualActive: { borderColor: Colors.info, backgroundColor: Colors.info },
+  splitBtnText: { fontSize: 12, fontWeight: '600', color: Colors.placeholder },
+  splitBtnTextActive: { color: Colors.textOnPrimary },
+  splitBtnEqualTextActive: { color: Colors.textOnPrimary },
+  addBtn: { borderWidth: 2, borderStyle: 'dashed', borderColor: Colors.accentLight, borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
+  addBtnText: { color: Colors.warning, fontSize: 14 },
+  participantCard: { borderWidth: 2, borderColor: Colors.border, borderRadius: 12, padding: 12, marginBottom: 10, backgroundColor: Colors.background },
+  participantCardOrganizer: { borderColor: Colors.warning, backgroundColor: Colors.accentLight },
   nameRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 8 },
-  organizerBtn: { borderWidth: 2, borderColor: '#e5e7eb', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 8, backgroundColor: '#fff' },
-  organizerBtnActive: { borderColor: '#fbbf24', backgroundColor: '#fbbf24' },
-  organizerBtnText: { fontSize: 12, fontWeight: '700', color: '#374151' },
+  organizerBtn: { borderWidth: 2, borderColor: Colors.border, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 8, backgroundColor: Colors.card },
+  organizerBtnActive: { borderColor: Colors.accent, backgroundColor: Colors.accent },
+  organizerBtnText: { fontSize: 12, fontWeight: '700', color: Colors.text },
   tenureRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   tenureInput: { width: 64, textAlign: 'center' },
-  suggestionsBox: { position: 'absolute', top: 44, left: 0, right: 0, backgroundColor: '#fff', borderWidth: 1, borderColor: '#fed7aa', borderRadius: 10, zIndex: 100, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 8, elevation: 8 },
-  suggestionItem: { padding: 12, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
-  suggestionName: { fontSize: 14, fontWeight: '600', color: '#111' },
-  suggestionSub: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
+  suggestionsBox: { position: 'absolute', top: 44, left: 0, right: 0, backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.accentLight, borderRadius: 10, zIndex: 100, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 8, elevation: 8 },
+  suggestionItem: { padding: 12, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  suggestionName: { fontSize: 14, fontWeight: '600', color: Colors.text },
+  suggestionSub: { fontSize: 12, color: Colors.placeholder, marginTop: 2 },
   // 名前入力行（👥ボタン付き）
   nameInputRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  memberPickerBtn: { width: 38, height: 38, borderRadius: 8, borderWidth: 1, borderColor: '#e5e7eb', backgroundColor: '#f9fafb', alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  memberPickerBtn: { width: 38, height: 38, borderRadius: 8, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
   memberPickerBtnText: { fontSize: 16 },
-  memberPickerSub: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
-  memberPickerSheet: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 0, paddingBottom: 40, maxHeight: '70%' },
-  memberPickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
-  memberPickerTitle: { fontSize: 16, fontWeight: '700', color: '#1a1a2e' },
+  memberPickerSub: { fontSize: 12, color: Colors.placeholder, marginTop: 2 },
+  memberPickerSheet: { backgroundColor: Colors.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 0, paddingBottom: 40, maxHeight: '70%' },
+  memberPickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  memberPickerTitle: { fontSize: 16, fontWeight: '700', color: Colors.primary },
   memberPickerCloseBtn: { paddingHorizontal: 4, paddingVertical: 4 },
-  memberPickerCloseText: { fontSize: 13, color: '#9ca3af', fontWeight: '600' },
+  memberPickerCloseText: { fontSize: 13, color: Colors.placeholder, fontWeight: '600' },
   memberPickerList: { flexGrow: 0 },
   // 出席管理（マトリクス表）
-  matrixTable: { flexDirection: 'row', marginTop: 10, borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, overflow: 'hidden' },
-  matrixNameCol: { width: 100, borderRightWidth: 1, borderRightColor: '#e5e7eb' },
-  matrixHeaderCell: { height: 40, backgroundColor: '#f3f4f6', justifyContent: 'center', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#e5e7eb', paddingHorizontal: 8 },
-  matrixNameDataCell: { height: 52, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, gap: 4, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
-  matrixHeaderRow: { flexDirection: 'row', height: 40, backgroundColor: '#f3f4f6', borderBottomWidth: 1, borderBottomColor: '#e5e7eb' },
-  matrixEventHeaderCell: { width: 80, height: 40, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4, borderRightWidth: 1, borderRightColor: '#e5e7eb' },
-  matrixHeaderText: { fontSize: 11, fontWeight: '700', color: '#6b7280', textAlign: 'center' },
-  matrixNameText: { flex: 1, fontSize: 13, fontWeight: '500', color: '#111' },
+  matrixTable: { flexDirection: 'row', marginTop: 10, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, overflow: 'hidden' },
+  matrixNameCol: { width: 100, borderRightWidth: 1, borderRightColor: Colors.border },
+  matrixHeaderCell: { height: 40, backgroundColor: Colors.background, justifyContent: 'center', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: Colors.border, paddingHorizontal: 8 },
+  matrixNameDataCell: { height: 52, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, gap: 4, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  matrixHeaderRow: { flexDirection: 'row', height: 40, backgroundColor: Colors.background, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  matrixEventHeaderCell: { width: 80, height: 40, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 4, borderRightWidth: 1, borderRightColor: Colors.border },
+  matrixHeaderText: { fontSize: 11, fontWeight: '700', color: Colors.textSecondary, textAlign: 'center' },
+  matrixNameText: { flex: 1, fontSize: 13, fontWeight: '500', color: Colors.text },
   matrixOrgMark: { fontSize: 12 },
-  matrixDataRow: { flexDirection: 'row', height: 52, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
-  matrixCell: { width: 80, height: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderRightWidth: 1, borderRightColor: '#f3f4f6' },
-  matrixCheckBox: { width: 22, height: 22, borderRadius: 5, borderWidth: 2, borderColor: '#d1d5db', backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
-  matrixCheckBoxChecked: { borderColor: '#e97316', backgroundColor: '#e97316' },
-  matrixCheckMark: { color: '#fff', fontSize: 12, fontWeight: '700' },
-  matrixPayerBtn: { paddingHorizontal: 3, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: '#e5e7eb', opacity: 0.4 },
-  matrixPayerBtnActive: { borderColor: '#f59e0b', backgroundColor: '#fef3c7', opacity: 1 },
+  matrixDataRow: { flexDirection: 'row', height: 52, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  matrixCell: { width: 80, height: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderRightWidth: 1, borderRightColor: Colors.border },
+  matrixCheckBox: { width: 22, height: 22, borderRadius: 5, borderWidth: 2, borderColor: Colors.border, backgroundColor: Colors.card, alignItems: 'center', justifyContent: 'center' },
+  matrixCheckBoxChecked: { borderColor: Colors.primary, backgroundColor: Colors.primary },
+  matrixCheckMark: { color: Colors.textOnPrimary, fontSize: 12, fontWeight: '700' },
+  matrixPayerBtn: { paddingHorizontal: 3, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: Colors.border, opacity: 0.4 },
+  matrixPayerBtnActive: { borderColor: Colors.accent, backgroundColor: Colors.accentLight, opacity: 1 },
   matrixPayerBtnText: { fontSize: 12 },
-  errorText: { color: '#dc2626', fontSize: 14, textAlign: 'center', marginBottom: 12 },
-  submitBtn: { backgroundColor: '#e97316', borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
+  errorText: { color: Colors.error, fontSize: 14, textAlign: 'center', marginBottom: 12 },
+  submitBtn: { backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 16, alignItems: 'center', marginTop: 8 },
   submitBtnDisabled: { opacity: 0.6 },
-  submitBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-  templateSaveAsBtn: { backgroundColor: '#7c3aed' },
-  templateDeleteBtn: { backgroundColor: '#dc2626' },
-  templateCancelBtn: { backgroundColor: '#f3f4f6', borderWidth: 1, borderColor: '#e5e7eb' },
-  templateCancelBtnText: { color: '#374151' },
+  submitBtnText: { color: Colors.textOnPrimary, fontSize: 16, fontWeight: '700' },
+  templateSaveAsBtn: { backgroundColor: Colors.info },
+  templateDeleteBtn: { backgroundColor: Colors.error },
+  templateCancelBtn: { backgroundColor: Colors.background, borderWidth: 1, borderColor: Colors.border },
+  templateCancelBtnText: { color: Colors.text },
   eventDateRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  calendarBtn: { width: 44, height: 44, borderWidth: 2, borderColor: '#fed7aa', backgroundColor: '#fff7ed', borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  calendarBtn: { width: 44, height: 44, borderWidth: 2, borderColor: Colors.accentLight, backgroundColor: Colors.accentLight, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   calendarBtnText: { fontSize: 20 },
   calendarOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  calendarCard: { backgroundColor: '#fff', borderRadius: 20, overflow: 'hidden', width: '100%', alignItems: 'center' },
-  datePickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#f3f4f6', width: '100%' },
-  datePickerTitle: { fontSize: 15, fontWeight: '700', color: '#1a1a2e' },
-  datePickerCancel: { fontSize: 18, color: '#9ca3af', paddingHorizontal: 4 },
+  calendarCard: { backgroundColor: Colors.card, borderRadius: 20, overflow: 'hidden', width: '100%', alignItems: 'center' },
+  datePickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Colors.border, width: '100%' },
+  datePickerTitle: { fontSize: 15, fontWeight: '700', color: Colors.primary },
+  datePickerCancel: { fontSize: 18, color: Colors.placeholder, paddingHorizontal: 4 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  modalSheet: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 20, paddingBottom: 40 },
-  modalTitle: { fontSize: 16, fontWeight: '700', color: '#1a1a2e', textAlign: 'center', marginBottom: 12, paddingHorizontal: 20 },
-  modalOption: { paddingVertical: 14, paddingHorizontal: 24, borderBottomWidth: 1, borderBottomColor: '#f3f4f6' },
-  modalOptionSelected: { backgroundColor: '#fff7ed' },
-  modalOptionText: { fontSize: 15, color: '#374151' },
-  modalOptionTextSelected: { color: '#e97316', fontWeight: '700' },
+  modalSheet: { backgroundColor: Colors.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 20, paddingBottom: 40 },
+  modalTitle: { fontSize: 16, fontWeight: '700', color: Colors.primary, textAlign: 'center', marginBottom: 12, paddingHorizontal: 20 },
+  modalOption: { paddingVertical: 14, paddingHorizontal: 24, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  modalOptionSelected: { backgroundColor: Colors.accentLight },
+  modalOptionText: { fontSize: 15, color: Colors.text },
+  modalOptionTextSelected: { color: Colors.primary, fontWeight: '700' },
 })
