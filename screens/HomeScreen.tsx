@@ -1,37 +1,29 @@
 import React, { useState, useCallback } from 'react'
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native'
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native'
 import { useFocusEffect } from '@react-navigation/native'
 import * as Haptics from 'expo-haptics'
 import type { HomeScreenProps } from '../navigation/types'
-import { supabase } from '../lib/supabase'
 import { getDeviceId } from '../lib/deviceId'
+import { getRecentRooms, type RoomSummary } from '../lib/actions'
 import { Colors } from '../theme/colors'
+import RoomStatusBadge from '../components/RoomStatusBadge'
 
-interface DraftRoom {
-  shareId: string
-  eventDate: string | null
-}
+const RECENT_ROOM_LIMIT = 10
 
 export default function HomeScreen({ navigation }: HomeScreenProps) {
-  const [draftRoom, setDraftRoom] = useState<DraftRoom | null>(null)
+  const [recentRooms, setRecentRooms] = useState<RoomSummary[]>([])
 
   useFocusEffect(
     useCallback(() => {
       let cancelled = false
       ;(async () => {
-        const deviceId = await getDeviceId()
-        const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-        const { data } = await supabase
-          .from('nomikai_seisan_rooms')
-          .select('share_id, event_date, created_at')
-          .eq('created_by_device_id', deviceId)
-          .eq('is_saved', false)
-          .gte('created_at', since)
-          .order('created_at', { ascending: false })
-          .limit(1)
-        if (cancelled) return
-        const room = data?.[0]
-        setDraftRoom(room ? { shareId: room.share_id as string, eventDate: room.event_date as string | null } : null)
+        try {
+          const deviceId = await getDeviceId()
+          const rooms = await getRecentRooms(deviceId, RECENT_ROOM_LIMIT)
+          if (!cancelled) setRecentRooms(rooms)
+        } catch (e) {
+          console.warn('[home] 最近のルームの取得に失敗しました', e)
+        }
       })()
       return () => { cancelled = true }
     }, [])
@@ -43,29 +35,19 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     else navigation.navigate(screen)
   }
 
-  const resumeDraft = () => {
-    if (!draftRoom) return
+  // 精算完了のルームは結果画面へ、作業中のルームは従来どおり入力画面で再開
+  const openRoom = (room: RoomSummary) => {
     Haptics.selectionAsync()
-    navigation.navigate('Create', { resumeDraftShareId: draftRoom.shareId })
+    if (room.isComplete) navigation.navigate('Room', { shareId: room.share_id })
+    else navigation.navigate('Create', { resumeDraftShareId: room.share_id })
   }
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.hero}>
         <Text style={styles.title}>⚖️ 傾斜精算くん</Text>
         <Text style={styles.subtitle}>役職・年次に応じた飲み会精算</Text>
       </View>
-
-      {draftRoom && (
-        <TouchableOpacity style={styles.draftBanner} onPress={resumeDraft} activeOpacity={0.85}>
-          <Text style={styles.draftBannerIcon}>📝</Text>
-          <View style={styles.flex1}>
-            <Text style={styles.draftBannerTitle}>作業中の精算があります</Text>
-            <Text style={styles.draftBannerSub}>{draftRoom.eventDate ? `${draftRoom.eventDate}・` : ''}タップして再開</Text>
-          </View>
-          <Text style={styles.draftBannerArrow}>›</Text>
-        </TouchableOpacity>
-      )}
 
       <View style={styles.grid}>
         <TouchableOpacity style={[styles.card, styles.primaryCard]} onPress={() => goTo('Create')}>
@@ -77,7 +59,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
         <TouchableOpacity style={styles.card} onPress={() => goTo('History')}>
           <Text style={[styles.cardIcon, styles.darkIcon]}>📋</Text>
           <Text style={[styles.cardTitle, styles.darkTitle]}>履歴</Text>
-          <Text style={styles.cardDescDark}>保存済みの精算を確認</Text>
+          <Text style={styles.cardDescDark}>これまでの精算をすべて確認</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.card} onPress={() => goTo('Templates')}>
@@ -86,7 +68,35 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           <Text style={styles.cardDescDark}>よく使う設定を再利用</Text>
         </TouchableOpacity>
       </View>
-    </View>
+
+      {recentRooms.length > 0 && (
+        <View style={styles.recentSection}>
+          <Text style={styles.recentTitle}>最近のルーム</Text>
+          <View style={styles.recentList}>
+            {recentRooms.map((room, idx) => (
+              <TouchableOpacity
+                key={room.share_id}
+                style={[styles.recentRow, idx < recentRooms.length - 1 && styles.recentRowBorder]}
+                onPress={() => openRoom(room)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.flex1}>
+                  <Text style={[styles.recentName, !room.event_date && styles.recentNameGray]} numberOfLines={1}>
+                    {room.event_date || '名前なし'}
+                  </Text>
+                  <Text style={styles.recentMeta}>
+                    {new Date(room.created_at).toLocaleDateString('ja-JP')} · {room.participantCount}名
+                    {room.grandTotal > 0 ? ` · ${room.grandTotal.toLocaleString()}円` : ''}
+                  </Text>
+                </View>
+                <RoomStatusBadge isComplete={room.isComplete} />
+                <Text style={styles.recentArrow}>›</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
+    </ScrollView>
   )
 }
 
@@ -94,7 +104,10 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
+  },
+  content: {
     padding: 20,
+    paddingBottom: 40,
   },
   hero: {
     alignItems: 'center',
@@ -115,14 +128,18 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   flex1: { flex: 1 },
-  draftBanner: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.accentLight, borderWidth: 1, borderColor: Colors.accentLight,
-    borderRadius: 14, padding: 14, marginBottom: 16, gap: 10,
+  recentSection: { marginTop: 24 },
+  recentTitle: { fontSize: 14, fontWeight: '700', color: Colors.text, marginBottom: 8, paddingHorizontal: 4 },
+  recentList: {
+    backgroundColor: Colors.card, borderRadius: 16, paddingHorizontal: 16,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.07, shadowRadius: 8, elevation: 2,
   },
-  draftBannerIcon: { fontSize: 22 },
-  draftBannerTitle: { fontSize: 14, fontWeight: '700', color: Colors.warning },
-  draftBannerSub: { fontSize: 12, color: Colors.warning, marginTop: 2 },
-  draftBannerArrow: { fontSize: 22, color: Colors.warning, fontWeight: '700' },
+  recentRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, gap: 8 },
+  recentRowBorder: { borderBottomWidth: 1, borderBottomColor: Colors.border },
+  recentName: { fontSize: 14, fontWeight: '700', color: Colors.text },
+  recentNameGray: { color: Colors.placeholder },
+  recentMeta: { fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
+  recentArrow: { fontSize: 20, color: Colors.placeholder, fontWeight: '700' },
   card: {
     backgroundColor: Colors.card,
     borderRadius: 16,

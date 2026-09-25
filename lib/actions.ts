@@ -139,6 +139,68 @@ export async function updateRoomSaved(shareId: string): Promise<void> {
   if (!data || data.length === 0) throw new Error('保存に失敗しました')
 }
 
+export interface RoomSummary {
+  share_id: string
+  event_date: string | null
+  tilt_ratio: number
+  created_at: string
+  is_saved: boolean
+  participantCount: number
+  grandTotal: number
+  isComplete: boolean
+}
+
+// 精算として成立しているか（参加者2人以上・合計金額 > 0）。
+// Home/履歴のバッジ判定と、RoomScreen の自動保存条件で同じ基準を使う。
+export function isSettlementComplete(participantCount: number, grandTotal: number): boolean {
+  return participantCount >= 2 && grandTotal > 0
+}
+
+// このデバイスで作成したルームを新しい順に返す（is_saved は問わない）
+export async function getRecentRooms(deviceId: string, limit: number): Promise<RoomSummary[]> {
+  const { data: rooms, error } = await supabase
+    .from('nomikai_seisan_rooms')
+    .select('id, share_id, event_date, tilt_ratio, created_at, is_saved')
+    .eq('created_by_device_id', deviceId)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  if (error) throw new Error(error.message)
+  if (!rooms || rooms.length === 0) return []
+
+  const roomIds = rooms.map((r) => r.id as string)
+  const [{ data: participants }, { data: events }] = await Promise.all([
+    supabase.from('nomikai_seisan_participants').select('room_id').in('room_id', roomIds),
+    supabase.from('nomikai_seisan_events').select('room_id, total_amount').in('room_id', roomIds),
+  ])
+
+  const countByRoom: Record<string, number> = {}
+  ;(participants ?? []).forEach((p) => {
+    const id = p.room_id as string
+    countByRoom[id] = (countByRoom[id] ?? 0) + 1
+  })
+  const totalByRoom: Record<string, number> = {}
+  ;(events ?? []).forEach((e) => {
+    const id = e.room_id as string
+    totalByRoom[id] = (totalByRoom[id] ?? 0) + ((e.total_amount as number) ?? 0)
+  })
+
+  return rooms.map((room) => {
+    const id = room.id as string
+    const participantCount = countByRoom[id] ?? 0
+    const grandTotal = totalByRoom[id] ?? 0
+    return {
+      share_id: room.share_id as string,
+      event_date: room.event_date as string | null,
+      tilt_ratio: (room.tilt_ratio as number) ?? 2.0,
+      created_at: room.created_at as string,
+      is_saved: (room.is_saved as boolean) ?? false,
+      participantCount,
+      grandTotal,
+      isComplete: isSettlementComplete(participantCount, grandTotal),
+    }
+  })
+}
+
 export async function deleteRoom(shareId: string): Promise<void> {
   const { data: room } = await supabase
     .from('nomikai_seisan_rooms')

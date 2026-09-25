@@ -5,22 +5,15 @@ import {
 } from 'react-native'
 import { useFocusEffect } from '@react-navigation/native'
 import type { HistoryScreenProps } from '../navigation/types'
-import { supabase } from '../lib/supabase'
 import { getDeviceId } from '../lib/deviceId'
-import { deleteRoom } from '../lib/actions'
+import { deleteRoom, getRecentRooms, type RoomSummary } from '../lib/actions'
 import { Colors } from '../theme/colors'
+import RoomStatusBadge from '../components/RoomStatusBadge'
 
-interface HistoryItem {
-  share_id: string
-  event_date: string | null
-  tilt_ratio: number
-  created_at: string
-  participantCount: number
-  grandTotal: number
-}
+const HISTORY_LIMIT = 100
 
 export default function HistoryScreen({ navigation }: HistoryScreenProps) {
-  const [items, setItems] = useState<HistoryItem[]>([])
+  const [items, setItems] = useState<RoomSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
@@ -35,34 +28,9 @@ export default function HistoryScreen({ navigation }: HistoryScreenProps) {
     else setLoading(true)
     try {
       const deviceId = await getDeviceId()
-      const { data: rooms } = await supabase
-        .from('nomikai_seisan_rooms')
-        .select('id, share_id, event_date, tilt_ratio, created_at')
-        .eq('created_by_device_id', deviceId)
-        .eq('is_saved', true)
-        .order('created_at', { ascending: false })
-        .limit(50)
-
-      if (!rooms) { setItems([]); return }
-
-      const enriched: HistoryItem[] = await Promise.all(
-        rooms.map(async (room) => {
-          const [{ count: participantCount }, { data: events }] = await Promise.all([
-            supabase.from('nomikai_seisan_participants').select('*', { count: 'exact', head: true }).eq('room_id', room.id),
-            supabase.from('nomikai_seisan_events').select('total_amount').eq('room_id', room.id),
-          ])
-          const grandTotal = (events ?? []).reduce((s, e) => s + (e.total_amount as number), 0)
-          return {
-            share_id: room.share_id as string,
-            event_date: room.event_date as string | null,
-            tilt_ratio: (room.tilt_ratio as number) ?? 2.0,
-            created_at: room.created_at as string,
-            participantCount: participantCount ?? 0,
-            grandTotal,
-          }
-        })
-      )
-      setItems(enriched)
+      setItems(await getRecentRooms(deviceId, HISTORY_LIMIT))
+    } catch (e) {
+      console.warn('[history] 履歴の取得に失敗しました', e)
     } finally {
       setLoading(false)
       setRefreshing(false)
@@ -85,6 +53,12 @@ export default function HistoryScreen({ navigation }: HistoryScreenProps) {
     ])
   }
 
+  // 精算完了のルームは結果画面へ、作業中のルームは入力画面で再開
+  const openRoom = (item: RoomSummary) => {
+    if (item.isComplete) navigation.navigate('Room', { shareId: item.share_id })
+    else navigation.navigate('Create', { resumeDraftShareId: item.share_id })
+  }
+
   if (loading) {
     return <View style={styles.center}><ActivityIndicator size="large" color={Colors.primary} /></View>
   }
@@ -98,7 +72,7 @@ export default function HistoryScreen({ navigation }: HistoryScreenProps) {
       ListHeaderComponent={
         items.length > 0 ? (
           <View style={styles.guidanceBanner}>
-            <Text style={styles.guidanceText}>📋 タップで結果確認、「コピーして作成」で同じメンバー構成の新規精算をすぐに始められます</Text>
+            <Text style={styles.guidanceText}>📋 タップで結果確認、「👥 このメンバーをベースに新しく作る」で同じメンバーの新規精算をすぐに始められます</Text>
           </View>
         ) : null
       }
@@ -106,7 +80,7 @@ export default function HistoryScreen({ navigation }: HistoryScreenProps) {
         <View style={styles.emptyBox}>
           <Text style={styles.emptyIcon}>📋</Text>
           <Text style={styles.emptyTitle}>履歴がありません</Text>
-          <Text style={styles.emptyDesc}>精算を作成して「履歴に保存」すると、ここから内容をコピーして新規精算をすぐに始められます</Text>
+          <Text style={styles.emptyDesc}>作成した精算はここに一覧表示され、同じメンバーで新しい精算をすぐに始められます</Text>
           <TouchableOpacity style={styles.emptyBtn} onPress={() => navigation.navigate('Create', {})}>
             <Text style={styles.emptyBtnText}>新規精算を作成</Text>
           </TouchableOpacity>
@@ -114,7 +88,7 @@ export default function HistoryScreen({ navigation }: HistoryScreenProps) {
       }
       renderItem={({ item }) => (
         <View style={styles.card}>
-          <TouchableOpacity style={styles.cardMain} onPress={() => navigation.navigate('Room', { shareId: item.share_id })} activeOpacity={0.8}>
+          <TouchableOpacity style={styles.cardMain} onPress={() => openRoom(item)} activeOpacity={0.8}>
             <View style={styles.cardTop}>
               <View style={styles.cardInfo}>
                 {item.event_date ? (
@@ -123,6 +97,7 @@ export default function HistoryScreen({ navigation }: HistoryScreenProps) {
                   <Text style={styles.cardDateGray}>日付なし</Text>
                 )}
                 <Text style={styles.cardMeta}>{item.participantCount}名 · 傾斜{item.tilt_ratio.toFixed(1)}倍</Text>
+                <RoomStatusBadge isComplete={item.isComplete} style={styles.cardBadge} />
               </View>
               <View style={styles.cardRight}>
                 <Text style={styles.cardTotal}>{item.grandTotal.toLocaleString()}<Text style={styles.cardUnit}>円</Text></Text>
@@ -130,6 +105,14 @@ export default function HistoryScreen({ navigation }: HistoryScreenProps) {
             </View>
             <Text style={styles.cardCreated}>{new Date(item.created_at).toLocaleDateString('ja-JP')} 作成</Text>
           </TouchableOpacity>
+          {item.participantCount > 0 && (
+            <TouchableOpacity
+              style={styles.baseMembersBtn}
+              onPress={() => navigation.navigate('Create', { baseMembersFromShareId: item.share_id })}
+            >
+              <Text style={styles.baseMembersBtnText}>👥 このメンバーをベースに新しく作る</Text>
+            </TouchableOpacity>
+          )}
           <View style={styles.cardBottom}>
             <TouchableOpacity
               style={styles.copyBtn}
@@ -170,6 +153,9 @@ const styles = StyleSheet.create({
   cardTotal: { fontSize: 20, fontWeight: '800', color: Colors.primary },
   cardUnit: { fontSize: 12, fontWeight: '400', color: Colors.placeholder },
   cardCreated: { fontSize: 11, color: Colors.placeholder },
+  cardBadge: { alignSelf: 'flex-start', marginTop: 6 },
+  baseMembersBtn: { marginHorizontal: 16, marginBottom: 12, backgroundColor: Colors.primary, borderRadius: 10, paddingVertical: 11, alignItems: 'center' },
+  baseMembersBtnText: { fontSize: 14, color: Colors.textOnPrimary, fontWeight: '700' },
   cardBottom: { flexDirection: 'row', alignItems: 'center', borderTopWidth: 1, borderTopColor: Colors.border },
   copyBtn: { flex: 1, paddingVertical: 11, paddingHorizontal: 14, borderRightWidth: 1, borderRightColor: Colors.border },
   copyBtnText: { fontSize: 13, color: Colors.info, fontWeight: '600' },

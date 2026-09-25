@@ -6,6 +6,7 @@ import {
 } from 'react-native'
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker'
 import * as Haptics from 'expo-haptics'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { CreateScreenProps } from '../navigation/types'
 import { ROLES, ROLE_EQUIVALENT_YEARS } from '../lib/calculations'
 import { createRoom, updateRoom, saveTemplate, updateTemplate, deleteTemplate, getSuggestions, getRecentMembers, type Suggestion, type TemplateParticipant, type TemplateEvent } from '../lib/actions'
@@ -31,6 +32,9 @@ interface EventState {
 
 const EVENT_PRESETS = ['1次会', '2次会', '3次会', '4次会', 'タクシー代', 'プレゼント代']
 const NUMERIC_ACCESSORY_ID = 'createScreenNumericDone'
+const TILT_INTRO_SEEN_KEY = 'has_seen_tilt_intro'
+// 参加者を入れたまま金額が入らない状態がこの時間続いたらヒントを出す
+const AMOUNT_HINT_DELAY_MS = 5 * 60 * 1000
 
 function makeParticipant(evtCount: number): ParticipantState {
   return {
@@ -49,7 +53,7 @@ function defaultEventName(currentCount: number): string {
 }
 
 export default function CreateScreen({ navigation, route }: CreateScreenProps) {
-  const { fromShareId, templateId, copyFromShareId, templateEditId, resumeDraftShareId } = route.params ?? {}
+  const { fromShareId, templateId, copyFromShareId, baseMembersFromShareId, templateEditId, resumeDraftShareId } = route.params ?? {}
   const isEdit = !!fromShareId
   const isTemplateEdit = !!templateEditId
 
@@ -86,8 +90,18 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
   const autosaveChainRef = useRef<Promise<void>>(Promise.resolve())
   const [draftSaving, setDraftSaving] = useState(false)
 
+  // 傾斜精算の初回説明（1回のみ）
+  const [tiltIntroOpen, setTiltIntroOpen] = useState(false)
+  const tiltIntroSeenRef = useRef(true)
+  // 金額未入力の救済ヒント
+  const [amountHintVisible, setAmountHintVisible] = useState(false)
+  const [amountHintDismissed, setAmountHintDismissed] = useState(false)
+
   useEffect(() => {
     getDeviceId().then(setDeviceId)
+    AsyncStorage.getItem(TILT_INTRO_SEEN_KEY)
+      .then((v) => { tiltIntroSeenRef.current = v === 'true' })
+      .catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -97,13 +111,15 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
       loadFromTemplate(templateId)
     } else if (copyFromShareId) {
       loadFromRoomCopy(copyFromShareId)
+    } else if (baseMembersFromShareId) {
+      loadFromRoomCopy(baseMembersFromShareId, { membersOnly: true })
     } else if (templateEditId) {
       loadForTemplateEdit(templateEditId)
     } else if (resumeDraftShareId) {
       draftShareIdRef.current = resumeDraftShareId
       loadFromRoom(resumeDraftShareId)
     }
-  }, [fromShareId, templateId, copyFromShareId, templateEditId, resumeDraftShareId])
+  }, [fromShareId, templateId, copyFromShareId, baseMembersFromShareId, templateEditId, resumeDraftShareId])
 
   useLayoutEffect(() => {
     if (isTemplateEdit) {
@@ -195,7 +211,8 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
     }
   }
 
-  async function loadFromRoomCopy(shareId: string) {
+  // membersOnly: 参加者（役職・年次・幹事・倍率）と傾斜設定だけを引き継ぎ、お会計は空の1次会から始める
+  async function loadFromRoomCopy(shareId: string, { membersOnly = false }: { membersOnly?: boolean } = {}) {
     setInitialLoading(true)
     try {
       const { data: room } = await supabase.from('nomikai_seisan_rooms').select('*').eq('share_id', shareId).single()
@@ -226,16 +243,22 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
       setTiltRatio(((room.tilt_ratio as number) ?? 2.0).toFixed(1))
       setManualMode((room.manual_mode as boolean) ?? false)
       setEventDate('')
-      setEvents(newEvents)
       const orgIdx = pData.findIndex((p) => p.is_organizer)
       setOrganizerIdx(orgIdx >= 0 ? orgIdx : null)
+      if (membersOnly) {
+        setEvents([{ name: '1次会', totalAmount: '', splitMode: 'tilt', payerParticipantIdx: orgIdx >= 0 ? orgIdx : null }])
+      } else {
+        setEvents(newEvents)
+      }
       setParticipants(pData.map((p, pIdx) => ({
         name: p.name as string,
         role: p.role as string,
         tenure_years: p.tenure_years != null ? String(p.tenure_years) : '',
         fixed_amount: '',
         manual_multiplier: String(p.manual_multiplier ?? '1.0'),
-        attendances: eData.map((e) => (rawAttendances ?? []).some((a) => a.event_id === e.id && a.participant_id === pData[pIdx].id)),
+        attendances: membersOnly
+          ? [true]
+          : eData.map((e) => (rawAttendances ?? []).some((a) => a.event_id === e.id && a.participant_id === pData[pIdx].id)),
       })))
     } finally {
       setInitialLoading(false)
@@ -544,6 +567,36 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [participants, events, eventDate, tiltRatio, manualMode, isEdit, isTemplateEdit, initialLoading])
 
+  const namedParticipantCount = participants.filter((p) => p.name.trim() !== '').length
+  const hasAnyAmount = events.some((ev) => Number(ev.totalAmount) > 0)
+
+  // 参加者が2人以上になったら「傾斜精算とは？」を初回だけ表示する。
+  // 名前の入力途中でキーボードを奪わないよう、入力が1.5秒止まってから出す
+  useEffect(() => {
+    if (isEdit || isTemplateEdit || initialLoading) return
+    if (tiltIntroSeenRef.current || namedParticipantCount < 2) return
+    const timer = setTimeout(() => {
+      if (tiltIntroSeenRef.current) return
+      tiltIntroSeenRef.current = true
+      Keyboard.dismiss()
+      setTiltIntroOpen(true)
+    }, 1500)
+    return () => clearTimeout(timer)
+  }, [participants, namedParticipantCount, isEdit, isTemplateEdit, initialLoading])
+
+  const closeTiltIntro = () => {
+    setTiltIntroOpen(false)
+    AsyncStorage.setItem(TILT_INTRO_SEEN_KEY, 'true').catch(() => {})
+  }
+
+  // 参加者2人以上・金額0のまま5分経ったら、金額入力を促すヒントを出す（金額が入れば自動で消える）
+  const needsAmountHint = !isTemplateEdit && !initialLoading && namedParticipantCount >= 2 && !hasAnyAmount
+  useEffect(() => {
+    if (!needsAmountHint) { setAmountHintVisible(false); return }
+    const timer = setTimeout(() => setAmountHintVisible(true), AMOUNT_HINT_DELAY_MS)
+    return () => clearTimeout(timer)
+  }, [needsAmountHint])
+
   const handleSubmit = async () => {
     setError('')
     if (!Number(events[0]?.totalAmount) || Number(events[0].totalAmount) <= 0) {
@@ -588,7 +641,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
   }
 
   return (
-    <>
+    <View style={styles.flex1}>
       <ScrollView
         style={styles.container}
         contentContainerStyle={styles.content}
@@ -789,43 +842,34 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
 
                 {/* 年次（その他役職時） */}
                 {!manualMode && p.role === 'その他役職' && (
-                  <View style={styles.tenureRow}>
-                    <TextInput
-                      style={[styles.input, styles.tenureInput]}
-                      value={p.tenure_years}
-                      onChangeText={(v) => updateParticipant(i, 'tenure_years', v)}
-                      placeholder="年次"
-                      placeholderTextColor={Colors.placeholder}
-                      keyboardType="numeric"
-                      inputAccessoryViewID={Platform.OS === 'ios' ? NUMERIC_ACCESSORY_ID : undefined}
-                    />
-                    <Text style={styles.unit}>年目</Text>
-                    <TextInput
-                      style={[styles.input, styles.flex1]}
-                      value={p.fixed_amount}
-                      onChangeText={(v) => updateParticipant(i, 'fixed_amount', v)}
-                      placeholder="固定額（省略可）"
-                      placeholderTextColor={Colors.placeholder}
-                      keyboardType="numeric"
-                      inputAccessoryViewID={Platform.OS === 'ios' ? NUMERIC_ACCESSORY_ID : undefined}
-                    />
-                    <Text style={styles.unit}>円固定</Text>
-                  </View>
+                  <>
+                    <View style={styles.tenureRow}>
+                      <TextInput
+                        style={[styles.input, styles.tenureInput]}
+                        value={p.tenure_years}
+                        onChangeText={(v) => updateParticipant(i, 'tenure_years', v)}
+                        placeholder="例: 3年目"
+                        placeholderTextColor={Colors.placeholder}
+                        keyboardType="numeric"
+                        inputAccessoryViewID={Platform.OS === 'ios' ? NUMERIC_ACCESSORY_ID : undefined}
+                      />
+                      <Text style={styles.unit}>年目</Text>
+                    </View>
+                    <Text style={styles.tenureNote}>※未入力の人は1年目扱い（全員未入力だと等分計算）になります</Text>
+                  </>
                 )}
-                {(manualMode || p.role !== 'その他役職') && (
-                  <View style={styles.tenureRow}>
-                    <TextInput
-                      style={[styles.input, styles.flex1]}
-                      value={p.fixed_amount}
-                      onChangeText={(v) => updateParticipant(i, 'fixed_amount', v)}
-                      placeholder="固定額（省略可）"
-                      placeholderTextColor={Colors.placeholder}
-                      keyboardType="numeric"
-                      inputAccessoryViewID={Platform.OS === 'ios' ? NUMERIC_ACCESSORY_ID : undefined}
-                    />
-                    <Text style={styles.unit}>円固定</Text>
-                  </View>
-                )}
+                <View style={styles.tenureRow}>
+                  <TextInput
+                    style={[styles.input, styles.flex1]}
+                    value={p.fixed_amount}
+                    onChangeText={(v) => updateParticipant(i, 'fixed_amount', v)}
+                    placeholder="固定額（省略可）"
+                    placeholderTextColor={Colors.placeholder}
+                    keyboardType="numeric"
+                    inputAccessoryViewID={Platform.OS === 'ios' ? NUMERIC_ACCESSORY_ID : undefined}
+                  />
+                  <Text style={styles.unit}>円固定</Text>
+                </View>
               </View>
             ))}
             <TouchableOpacity style={styles.addBtn} onPress={addParticipant}>
@@ -928,9 +972,20 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
             </TouchableOpacity>
           )}
 
-          <View style={{ height: 40 }} />
+          {/* 下部ヒント表示中は確定ボタンが隠れないよう余白を広げる */}
+          <View style={{ height: amountHintVisible && !amountHintDismissed ? 100 : 40 }} />
         </Pressable>
       </ScrollView>
+
+      {/* 金額未入力のまま放置されたときの救済ヒント */}
+      {amountHintVisible && !amountHintDismissed && (
+        <View style={styles.amountHint}>
+          <Text style={styles.amountHintText}>💡 合計金額を入力すると精算が始まります</Text>
+          <TouchableOpacity onPress={() => setAmountHintDismissed(true)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Text style={styles.amountHintClose}>✕</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {Platform.OS === 'ios' && (
         <InputAccessoryView nativeID={NUMERIC_ACCESSORY_ID}>
@@ -966,6 +1021,31 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
+      </Modal>
+
+      {/* 傾斜精算の初回説明（オンボーディング、1回のみ） */}
+      <Modal visible={tiltIntroOpen} transparent animationType="fade" onRequestClose={closeTiltIntro}>
+        <View style={styles.introOverlay}>
+          <View style={styles.introCard}>
+            <Text style={styles.introEmoji}>⚖️</Text>
+            <Text style={styles.introTitle}>傾斜精算とは？</Text>
+            <Text style={styles.introHeading}>傾斜比率</Text>
+            <Text style={styles.introBody}>
+              年次が高い人ほど多めに払う割り勘です。「2.0倍」なら、一番年次が高い人が一番若い人のおよそ2倍を払います。
+            </Text>
+            <Text style={styles.introHeading}>若手にやさしい精算</Text>
+            <Text style={styles.introBody}>
+              収入の差を反映して、若手の負担を軽くできます。「先輩が多めに出す」をスマートに、揉めずに計算できます。
+            </Text>
+            <Text style={styles.introHeading}>年次の入力がポイント</Text>
+            <Text style={styles.introBody}>
+              各参加者の役職か年次を入れることで傾斜がかかります。未入力のままだと全員同じ扱い（等分）になるので、ぜひ入力してください。
+            </Text>
+            <TouchableOpacity style={styles.introBtn} onPress={closeTiltIntro}>
+              <Text style={styles.introBtnText}>わかりました</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
       </Modal>
 
       {/* 傾斜倍率モーダル */}
@@ -1090,7 +1170,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
           </View>
         </TouchableOpacity>
       </Modal>
-    </>
+    </View>
   )
 }
 
@@ -1154,7 +1234,8 @@ const styles = StyleSheet.create({
   organizerBtnActive: { borderColor: Colors.accent, backgroundColor: Colors.accent },
   organizerBtnText: { fontSize: 12, fontWeight: '700', color: Colors.text },
   tenureRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
-  tenureInput: { width: 64, textAlign: 'center' },
+  tenureInput: { width: 110, textAlign: 'center' },
+  tenureNote: { fontSize: 11, color: Colors.placeholder, marginTop: 4 },
   suggestionsBox: { position: 'absolute', top: 44, left: 0, right: 0, backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.accentLight, borderRadius: 10, zIndex: 100, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 8, elevation: 8 },
   suggestionItem: { padding: 12, borderBottomWidth: 1, borderBottomColor: Colors.border },
   suggestionName: { fontSize: 14, fontWeight: '600', color: Colors.text },
@@ -1204,6 +1285,23 @@ const styles = StyleSheet.create({
   datePickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Colors.border, width: '100%' },
   datePickerTitle: { fontSize: 15, fontWeight: '700', color: Colors.primary },
   datePickerCancel: { fontSize: 18, color: Colors.placeholder, paddingHorizontal: 4 },
+  amountHint: {
+    position: 'absolute', left: 16, right: 16, bottom: 24,
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: Colors.primaryLight, borderWidth: 1, borderColor: Colors.borderStrong, borderRadius: 12,
+    paddingVertical: 12, paddingHorizontal: 14,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 6, elevation: 3,
+  },
+  amountHintText: { flex: 1, fontSize: 13, color: Colors.primary, fontWeight: '600' },
+  amountHintClose: { fontSize: 14, color: Colors.placeholder },
+  introOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 },
+  introCard: { backgroundColor: Colors.card, borderRadius: 20, padding: 24 },
+  introEmoji: { fontSize: 36, textAlign: 'center' },
+  introTitle: { fontSize: 20, fontWeight: '800', color: Colors.primary, textAlign: 'center', marginTop: 4, marginBottom: 12 },
+  introHeading: { fontSize: 14, fontWeight: '700', color: Colors.text, marginTop: 8, marginBottom: 4 },
+  introBody: { fontSize: 13, color: Colors.textSecondary, lineHeight: 20 },
+  introBtn: { backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 20 },
+  introBtnText: { color: Colors.textOnPrimary, fontSize: 15, fontWeight: '700' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
   modalSheet: { backgroundColor: Colors.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 20, paddingBottom: 40 },
   modalTitle: { fontSize: 16, fontWeight: '700', color: Colors.primary, textAlign: 'center', marginBottom: 12, paddingHorizontal: 20 },

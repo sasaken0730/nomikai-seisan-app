@@ -8,11 +8,15 @@ import * as Clipboard from 'expo-clipboard'
 import type { RoomScreenProps } from '../navigation/types'
 import { supabase } from '../lib/supabase'
 import { applyRoundingPerEvent, ROLE_EQUIVALENT_YEARS, type ParticipantInput, type EventInput } from '../lib/calculations'
-import { updateRoomSaved, saveTemplate } from '../lib/actions'
+import { updateRoomSaved, saveTemplate, isSettlementComplete } from '../lib/actions'
 import { getDeviceId } from '../lib/deviceId'
+import { recordSettlementCompletion } from '../lib/reviewPrompt'
 import { Colors } from '../theme/colors'
 
 type Unit = 500 | 1000
+type SaveStatus = 'not_ready' | 'saving' | 'saved' | 'error'
+
+const AUTO_SAVE_DELAY_MS = 3000
 
 function getRoleBadgeLabel(role: string, tenureYears: number | null): string {
   const displayRole = role === 'その他役職' ? 'その他' : role.replace('クラス', '')
@@ -96,7 +100,7 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
   const [events, setEvents] = useState<EventInput[]>([])
   const [payerByEventId, setPayerByEventId] = useState<Record<string, string | null>>({})
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('not_ready')
   const [savingTemplate, setSavingTemplate] = useState(false)
   const [unit, setUnit] = useState<Unit>(1000)
   const [selectedGradient, setSelectedGradient] = useState<number | null>(null)
@@ -112,6 +116,22 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
   useEffect(() => {
     loadRoom()
   }, [shareId])
+
+  // 精算が成立したら（参加者2人以上・合計金額 > 0）自動で履歴に保存する。
+  // 保存済みのルームでは走らないので、開き直しても再保存・再カウントされない。
+  const isReadyToSave =
+    events.length >= 1 &&
+    isSettlementComplete(participants.length, events.reduce((s, e) => s + e.amount, 0))
+
+  useEffect(() => {
+    if (!room) return
+    if (room.is_saved) { setSaveStatus('saved'); return }
+    if (!isReadyToSave) { setSaveStatus('not_ready'); return }
+    setSaveStatus('saving')
+    const timer = setTimeout(handleSave, AUTO_SAVE_DELAY_MS)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room?.is_saved, isReadyToSave])
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -181,18 +201,17 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
     } catch {}
   }
 
-  const handleSave = async () => {
-    setSaving(true)
+  // 自動保存本体。UIからは保存失敗時の再試行でのみ呼ばれる（サイレント実行、Alert/Hapticなし）
+  async function handleSave() {
+    setSaveStatus('saving')
     try {
       await updateRoomSaved(shareId)
       setRoom((r) => r ? { ...r, is_saved: true } : r)
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
-      Alert.alert('保存しました', '履歴ページに表示されます')
+      setSaveStatus('saved')
+      recordSettlementCompletion()
     } catch (e) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error)
-      Alert.alert('エラー', e instanceof Error ? e.message : '保存に失敗しました')
-    } finally {
-      setSaving(false)
+      console.error('[autoSave] 履歴への保存に失敗しました', e)
+      setSaveStatus('error')
     }
   }
 
@@ -351,19 +370,35 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
         </View>
       </View>
 
-      {/* 履歴保存（メインCTA） */}
-      {!room.is_saved && (
-        <TouchableOpacity style={styles.primarySaveCard} onPress={handleSave} disabled={saving} activeOpacity={0.85}>
-          {saving ? (
-            <ActivityIndicator color={Colors.textOnPrimary} />
-          ) : (
-            <>
-              <Text style={styles.primarySaveCardTitle}>💾 この精算を履歴に保存</Text>
-              <Text style={styles.primarySaveCardSub}>保存すると履歴からいつでも確認できます</Text>
-            </>
-          )}
-        </TouchableOpacity>
-      )}
+      {/* 保存ステータス（自動保存の状態表示。タップできるのは保存失敗時の再試行のみ） */}
+      <TouchableOpacity
+        style={[styles.saveStatusCard, saveStatusCardStyles[saveStatus]]}
+        onPress={handleSave}
+        disabled={saveStatus !== 'error'}
+        activeOpacity={0.85}
+      >
+        {saveStatus === 'not_ready' && (
+          <Text style={[styles.saveStatusTitle, styles.saveStatusTitleMuted]}>まだ精算が完了していません（保存されません）</Text>
+        )}
+        {saveStatus === 'saving' && (
+          <View style={styles.saveStatusRow}>
+            <ActivityIndicator size="small" color={Colors.primary} />
+            <View style={styles.saveStatusTextCol}>
+              <Text style={[styles.saveStatusTitle, styles.saveStatusTitlePrimary]}>保存中...</Text>
+              <Text style={[styles.saveStatusSub, styles.saveStatusSubPrimary]}>完了後に履歴画面から確認できます</Text>
+            </View>
+          </View>
+        )}
+        {saveStatus === 'saved' && (
+          <>
+            <Text style={[styles.saveStatusTitle, styles.saveStatusTitleOnPrimary]}>✓ 履歴に保存済み</Text>
+            <Text style={[styles.saveStatusSub, styles.saveStatusSubOnPrimary]}>いつでも履歴画面から確認できます</Text>
+          </>
+        )}
+        {saveStatus === 'error' && (
+          <Text style={[styles.saveStatusTitle, styles.saveStatusTitleError]}>⚠️ 保存に失敗しました（タップで再試行）</Text>
+        )}
+      </TouchableOpacity>
 
       {/* 金額サマリー */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.summaryScroll}>
@@ -567,11 +602,6 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
         <TouchableOpacity style={[styles.actionBtn, styles.actionBtnCopy]} onPress={handleCopyResult}>
           <Text style={[styles.actionBtnText, styles.actionBtnCopyText]}>📋 精算結果をコピー</Text>
         </TouchableOpacity>
-        {room.is_saved && (
-          <View style={[styles.actionBtn, styles.actionBtnSaved]}>
-            <Text style={[styles.actionBtnText, styles.actionBtnSavedText]}>✓ 履歴に保存済み</Text>
-          </View>
-        )}
         {Platform.OS === 'ios' && (
           <TouchableOpacity style={[styles.actionBtn, styles.actionBtnTemplate]} onPress={handleSaveTemplate} disabled={savingTemplate}>
             {savingTemplate ? <ActivityIndicator color={Colors.textOnPrimary} /> : <Text style={[styles.actionBtnText, styles.actionBtnTemplateText]}>📑 テンプレートとして保存</Text>}
@@ -607,12 +637,17 @@ const styles = StyleSheet.create({
   headerSub: { fontSize: 13, color: 'rgba(255,255,255,0.8)', marginTop: 4 },
   headerBadge: { backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4, marginTop: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
   headerBadgeText: { color: Colors.textOnPrimary, fontSize: 12, fontWeight: '600' },
-  primarySaveCard: {
-    backgroundColor: Colors.success, borderRadius: 16, paddingVertical: 18, alignItems: 'center', marginBottom: 14,
-    shadowColor: Colors.success, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 4,
-  },
-  primarySaveCardTitle: { color: Colors.textOnPrimary, fontSize: 17, fontWeight: '800' },
-  primarySaveCardSub: { color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 4 },
+  saveStatusCard: { borderRadius: 14, paddingVertical: 14, paddingHorizontal: 16, alignItems: 'center', marginBottom: 14, borderWidth: 1 },
+  saveStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  saveStatusTextCol: { alignItems: 'flex-start' },
+  saveStatusTitle: { fontSize: 14, fontWeight: '700', textAlign: 'center' },
+  saveStatusTitleMuted: { color: Colors.textSecondary, fontWeight: '600' },
+  saveStatusTitlePrimary: { color: Colors.primary },
+  saveStatusTitleOnPrimary: { color: Colors.textOnPrimary, fontSize: 15 },
+  saveStatusTitleError: { color: Colors.error },
+  saveStatusSub: { fontSize: 12, marginTop: 2 },
+  saveStatusSubPrimary: { color: Colors.primary, opacity: 0.75 },
+  saveStatusSubOnPrimary: { color: 'rgba(255,255,255,0.85)', textAlign: 'center' },
   summaryScroll: { marginBottom: 14 },
   summaryRow: { flexDirection: 'row', gap: 10, paddingVertical: 4 },
   summaryCard: { backgroundColor: Colors.card, borderRadius: 12, padding: 12, minWidth: 100, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 4, elevation: 1 },
@@ -687,8 +722,6 @@ const styles = StyleSheet.create({
   actionBtnText: { fontSize: 14, fontWeight: '600', color: Colors.text },
   actionBtnCopy: { backgroundColor: Colors.infoLight, borderColor: Colors.info },
   actionBtnCopyText: { color: Colors.info },
-  actionBtnSaved: { backgroundColor: Colors.successLight, borderColor: Colors.success },
-  actionBtnSavedText: { color: Colors.success },
   actionBtnTemplate: { backgroundColor: Colors.info, borderColor: Colors.info },
   actionBtnTemplateText: { color: Colors.textOnPrimary },
   newBtn: { borderWidth: 2, borderColor: Colors.accentLight, borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 10, marginBottom: 14 },
@@ -702,4 +735,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(22,41,140,0.92)', borderRadius: 24, paddingVertical: 12, paddingHorizontal: 20,
   },
   toastText: { color: Colors.textOnPrimary, fontSize: 14, fontWeight: '600' },
+})
+
+const saveStatusCardStyles = StyleSheet.create({
+  not_ready: { backgroundColor: Colors.background, borderColor: Colors.border },
+  saving: { backgroundColor: Colors.primaryLight, borderColor: Colors.primaryLight },
+  saved: { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  error: { backgroundColor: Colors.errorLight, borderColor: Colors.error },
 })
