@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import {
-  View, Text, ScrollView, StyleSheet, TouchableOpacity, Share,
+  View, Text, ScrollView, StyleSheet, TouchableOpacity,
   ActivityIndicator, Alert, Platform,
 } from 'react-native'
 import * as Haptics from 'expo-haptics'
@@ -192,13 +192,6 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
     } finally {
       setLoading(false)
     }
-  }
-
-  const handleShare = async () => {
-    const webUrl = `https://nomikai-seisan.vercel.app/room/${shareId}`
-    try {
-      await Share.share({ message: `傾斜精算の結果\n${webUrl}`, url: webUrl })
-    } catch {}
   }
 
   // 自動保存本体。UIからは保存失敗時の再試行でのみ呼ばれる（サイレント実行、Alert/Hapticなし）
@@ -596,9 +589,6 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
       {/* アクションボタン群 */}
       <View style={styles.actionsCard}>
         <Text style={styles.actionsTitle}>共有・保存</Text>
-        <TouchableOpacity style={styles.actionBtn} onPress={handleShare}>
-          <Text style={styles.actionBtnText}>🔗 URLを共有</Text>
-        </TouchableOpacity>
         <TouchableOpacity style={[styles.actionBtn, styles.actionBtnCopy]} onPress={handleCopyResult}>
           <Text style={[styles.actionBtnText, styles.actionBtnCopyText]}>📋 精算結果をコピー</Text>
         </TouchableOpacity>

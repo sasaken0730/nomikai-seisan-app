@@ -80,6 +80,15 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
   const [tiltHelpOpen, setTiltHelpOpen] = useState(false)
   const [multiplierModalIdx, setMultiplierModalIdx] = useState<number | null>(null)
   const [roleModalIdx, setRoleModalIdx] = useState<number | null>(null)
+  // 参加者カードの「幹事・固定額」詳細を手動で開いた行（デフォルトは閉じた1行表示）
+  const [expandedParticipantIdx, setExpandedParticipantIdx] = useState<Set<number>>(new Set())
+  const toggleParticipantDetail = (i: number) => {
+    setExpandedParticipantIdx((prev) => {
+      const next = new Set(prev)
+      if (next.has(i)) next.delete(i); else next.add(i)
+      return next
+    })
+  }
   const [showDatePicker, setShowDatePicker] = useState(false)
   const [pickerDate, setPickerDate] = useState(new Date())
   const [deviceId, setDeviceId] = useState<string | null>(null)
@@ -454,6 +463,18 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
     setParticipants(next)
   }
 
+  const adjustTiltRatio = (delta: number) => {
+    const current = parseFloat(tiltRatio) || 2.0
+    const next = Math.min(5.0, Math.max(1.0, Math.round((current + delta) * 10) / 10))
+    setTiltRatio(next.toFixed(1))
+  }
+
+  const adjustMultiplier = (i: number, delta: number) => {
+    const current = parseFloat(participants[i]?.manual_multiplier ?? '1.0') || 1.0
+    const next = Math.min(5.0, Math.max(1.0, Math.round((current + delta) * 10) / 10))
+    updateParticipant(i, 'manual_multiplier', next.toFixed(1))
+  }
+
   const updateAttendance = (pIdx: number, eIdx: number, value: boolean) => {
     const next = [...participants]
     const att = [...(next[pIdx].attendances ?? [])]
@@ -779,9 +800,12 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
           {/* 参加者リスト */}
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>参加者</Text>
-            {participants.map((p, i) => (
+            {participants.map((p, i) => {
+              const hasDetail = organizerIdx === i || !!p.fixed_amount
+              const isExpanded = expandedParticipantIdx.has(i) || hasDetail
+              return (
               <View key={i} style={[styles.participantCard, organizerIdx === i && styles.participantCardOrganizer]}>
-                {/* 名前行 */}
+                {/* 1行目：名前 + 役職/倍率 + 削除 */}
                 <View style={styles.nameRow}>
                   <View style={styles.flex1}>
                     <View style={styles.nameInputRow}>
@@ -817,9 +841,17 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                       </View>
                     )}
                   </View>
-                  <TouchableOpacity style={[styles.organizerBtn, organizerIdx === i && styles.organizerBtnActive]} onPress={() => handleSetOrganizer(organizerIdx === i ? null : i)}>
-                    <Text style={styles.organizerBtnText}>{organizerIdx === i ? '👑' : '🎤'} 幹事</Text>
-                  </TouchableOpacity>
+                  {!manualMode ? (
+                    <TouchableOpacity style={styles.compactSelector} onPress={() => setRoleModalIdx(i)} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
+                      <Text style={styles.compactSelectorText} numberOfLines={1}>
+                        {p.role === 'その他役職' ? 'その他' : p.role.replace('クラス', '')}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity style={styles.compactSelector} onPress={() => setMultiplierModalIdx(i)} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
+                      <Text style={styles.compactSelectorText} numberOfLines={1}>{p.manual_multiplier}倍</Text>
+                    </TouchableOpacity>
+                  )}
                   {participants.length > 1 && (
                     <TouchableOpacity onPress={() => removeParticipant(i)} style={styles.removeBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                       <Text style={styles.removeBtnText}>✕</Text>
@@ -827,20 +859,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                   )}
                 </View>
 
-                {/* 役職 or 倍率 */}
-                {!manualMode ? (
-                  <TouchableOpacity style={styles.selector} onPress={() => setRoleModalIdx(i)} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
-                    <Text style={styles.selectorText}>{p.role}{ROLE_EQUIVALENT_YEARS[p.role] ? `（${ROLE_EQUIVALENT_YEARS[p.role]}年換算）` : '（年次入力）'}</Text>
-                    <Text style={styles.selectorArrow}>▼</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity style={styles.selector} onPress={() => setMultiplierModalIdx(i)} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
-                    <Text style={styles.selectorText}>{p.manual_multiplier}倍</Text>
-                    <Text style={styles.selectorArrow}>▼</Text>
-                  </TouchableOpacity>
-                )}
-
-                {/* 年次（その他役職時） */}
+                {/* 年次（その他役職を選んだ時だけ表示） */}
                 {!manualMode && p.role === 'その他役職' && (
                   <>
                     <View style={styles.tenureRow}>
@@ -858,20 +877,39 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                     <Text style={styles.tenureNote}>※未入力の人は1年目扱い（全員未入力だと等分計算）になります</Text>
                   </>
                 )}
-                <View style={styles.tenureRow}>
-                  <TextInput
-                    style={[styles.input, styles.flex1]}
-                    value={p.fixed_amount}
-                    onChangeText={(v) => updateParticipant(i, 'fixed_amount', v)}
-                    placeholder="固定額（省略可）"
-                    placeholderTextColor={Colors.placeholder}
-                    keyboardType="numeric"
-                    inputAccessoryViewID={Platform.OS === 'ios' ? NUMERIC_ACCESSORY_ID : undefined}
-                  />
-                  <Text style={styles.unit}>円固定</Text>
-                </View>
+
+                {/* 幹事・固定額は使う人だけ開く（既に設定済みの行は自動的に開いたままにする） */}
+                <TouchableOpacity
+                  style={styles.detailToggle}
+                  onPress={() => toggleParticipantDetail(i)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.detailToggleText}>
+                    {isExpanded ? '︿ 幹事・固定額を閉じる' : `⋯ 幹事・固定額${hasDetail ? '（設定あり）' : ''}`}
+                  </Text>
+                </TouchableOpacity>
+                {isExpanded && (
+                  <View style={styles.detailRow}>
+                    <TouchableOpacity style={[styles.organizerBtn, organizerIdx === i && styles.organizerBtnActive]} onPress={() => handleSetOrganizer(organizerIdx === i ? null : i)}>
+                      <Text style={styles.organizerBtnText}>{organizerIdx === i ? '👑 幹事' : '🎤 幹事にする'}</Text>
+                    </TouchableOpacity>
+                    <View style={[styles.tenureRow, styles.detailFixedAmountRow]}>
+                      <TextInput
+                        style={[styles.input, styles.flex1]}
+                        value={p.fixed_amount}
+                        onChangeText={(v) => updateParticipant(i, 'fixed_amount', v)}
+                        placeholder="固定額（省略可）"
+                        placeholderTextColor={Colors.placeholder}
+                        keyboardType="numeric"
+                        inputAccessoryViewID={Platform.OS === 'ios' ? NUMERIC_ACCESSORY_ID : undefined}
+                      />
+                      <Text style={styles.unit}>円固定</Text>
+                    </View>
+                  </View>
+                )}
               </View>
-            ))}
+              )
+            })}
             <TouchableOpacity style={styles.addBtn} onPress={addParticipant}>
               <Text style={styles.addBtnText}>＋ 参加者を追加</Text>
             </TouchableOpacity>
@@ -1048,16 +1086,43 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
         </View>
       </Modal>
 
-      {/* 傾斜倍率モーダル */}
+      {/* 傾斜倍率モーダル（0.1刻みのステッパー＋よく使う倍率のプリセット） */}
       <Modal visible={tiltModalOpen} transparent animationType="slide" onRequestClose={() => setTiltModalOpen(false)}>
         <TouchableOpacity style={styles.modalOverlay} onPress={() => setTiltModalOpen(false)} activeOpacity={1}>
-          <View style={styles.modalSheet}>
+          <View style={styles.modalSheet} onStartShouldSetResponder={() => true}>
             <Text style={styles.modalTitle}>傾斜倍率を選択</Text>
-            {[1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0].map((v) => (
-              <TouchableOpacity key={v} style={[styles.modalOption, tiltRatio === v.toFixed(1) && styles.modalOptionSelected]} onPress={() => { setTiltRatio(v.toFixed(1)); setTiltModalOpen(false) }}>
-                <Text style={[styles.modalOptionText, tiltRatio === v.toFixed(1) && styles.modalOptionTextSelected]}>{v.toFixed(1)}倍{v === 2.0 ? '（推奨）' : ''}</Text>
+            <View style={styles.stepperRow}>
+              <TouchableOpacity
+                style={[styles.stepperBtn, parseFloat(tiltRatio) <= 1.0 && styles.stepperBtnDisabled]}
+                onPress={() => adjustTiltRatio(-0.1)}
+                disabled={parseFloat(tiltRatio) <= 1.0}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Text style={styles.stepperBtnText}>−</Text>
               </TouchableOpacity>
-            ))}
+              <Text style={styles.stepperValue}>{tiltRatio}倍{tiltRatio === '2.0' ? '（推奨）' : ''}</Text>
+              <TouchableOpacity
+                style={[styles.stepperBtn, parseFloat(tiltRatio) >= 5.0 && styles.stepperBtnDisabled]}
+                onPress={() => adjustTiltRatio(0.1)}
+                disabled={parseFloat(tiltRatio) >= 5.0}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              >
+                <Text style={styles.stepperBtnText}>＋</Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.presetChipRow}>
+              {[1.5, 2.0, 2.5, 3.0, 3.5, 4.0].map((v) => {
+                const selected = tiltRatio === v.toFixed(1)
+                return (
+                  <TouchableOpacity key={v} style={[styles.presetChip, selected && styles.presetChipActive]} onPress={() => setTiltRatio(v.toFixed(1))}>
+                    <Text style={[styles.presetChipText, selected && styles.presetChipTextActive]}>{v.toFixed(1)}</Text>
+                  </TouchableOpacity>
+                )
+              })}
+            </View>
+            <TouchableOpacity style={styles.tiltHelpCloseBtn} onPress={() => setTiltModalOpen(false)}>
+              <Text style={styles.tiltHelpCloseBtnText}>決定</Text>
+            </TouchableOpacity>
           </View>
         </TouchableOpacity>
       </Modal>
@@ -1079,19 +1144,51 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
         </TouchableOpacity>
       </Modal>
 
-      {/* 倍率モーダル */}
+      {/* 倍率モーダル（0.1刻みのステッパー＋よく使う倍率のプリセット） */}
       <Modal visible={multiplierModalIdx !== null} transparent animationType="slide" onRequestClose={() => setMultiplierModalIdx(null)}>
         <TouchableOpacity style={styles.modalOverlay} onPress={() => setMultiplierModalIdx(null)} activeOpacity={1}>
-          <View style={styles.modalSheet}>
+          <View style={styles.modalSheet} onStartShouldSetResponder={() => true}>
             <Text style={styles.modalTitle}>倍率を選択</Text>
-            {[1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0].map((v) => {
-              const selected = multiplierModalIdx !== null && participants[multiplierModalIdx]?.manual_multiplier === String(v)
+            {multiplierModalIdx !== null && (() => {
+              const idx = multiplierModalIdx
+              const current = parseFloat(participants[idx]?.manual_multiplier ?? '1.0') || 1.0
               return (
-                <TouchableOpacity key={v} style={[styles.modalOption, selected && styles.modalOptionSelected]} onPress={() => { if (multiplierModalIdx !== null) updateParticipant(multiplierModalIdx, 'manual_multiplier', String(v)); setMultiplierModalIdx(null) }}>
-                  <Text style={[styles.modalOptionText, selected && styles.modalOptionTextSelected]}>{v.toFixed(1)}倍</Text>
-                </TouchableOpacity>
+                <>
+                  <View style={styles.stepperRow}>
+                    <TouchableOpacity
+                      style={[styles.stepperBtn, current <= 1.0 && styles.stepperBtnDisabled]}
+                      onPress={() => adjustMultiplier(idx, -0.1)}
+                      disabled={current <= 1.0}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Text style={styles.stepperBtnText}>−</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.stepperValue}>{current.toFixed(1)}倍</Text>
+                    <TouchableOpacity
+                      style={[styles.stepperBtn, current >= 5.0 && styles.stepperBtnDisabled]}
+                      onPress={() => adjustMultiplier(idx, 0.1)}
+                      disabled={current >= 5.0}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    >
+                      <Text style={styles.stepperBtnText}>＋</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <View style={styles.presetChipRow}>
+                    {[1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0].map((v) => {
+                      const selected = current.toFixed(1) === v.toFixed(1)
+                      return (
+                        <TouchableOpacity key={v} style={[styles.presetChip, selected && styles.presetChipActive]} onPress={() => updateParticipant(idx, 'manual_multiplier', v.toFixed(1))}>
+                          <Text style={[styles.presetChipText, selected && styles.presetChipTextActive]}>{v.toFixed(1)}</Text>
+                        </TouchableOpacity>
+                      )
+                    })}
+                  </View>
+                  <TouchableOpacity style={styles.tiltHelpCloseBtn} onPress={() => setMultiplierModalIdx(null)}>
+                    <Text style={styles.tiltHelpCloseBtnText}>決定</Text>
+                  </TouchableOpacity>
+                </>
               )
-            })}
+            })()}
           </View>
         </TouchableOpacity>
       </Modal>
@@ -1236,6 +1333,14 @@ const styles = StyleSheet.create({
   tenureRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
   tenureInput: { width: 110, textAlign: 'center' },
   tenureNote: { fontSize: 11, color: Colors.placeholder, marginTop: 4 },
+  // 名前行に収める役職/倍率の簡易表示（タップでモーダルを開く。フル幅セレクタより軽量）
+  compactSelector: { paddingHorizontal: 10, paddingVertical: 9, borderRadius: 8, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.card, maxWidth: 92 },
+  compactSelectorText: { fontSize: 13, color: Colors.text, fontWeight: '600', textAlign: 'center' },
+  // 幹事・固定額の開閉トグル（デフォルト非表示、設定済みの行は自動展開）
+  detailToggle: { marginTop: 8, alignSelf: 'flex-start' },
+  detailToggleText: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600' },
+  detailRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
+  detailFixedAmountRow: { flex: 1, marginTop: 0 },
   suggestionsBox: { position: 'absolute', top: 44, left: 0, right: 0, backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.accentLight, borderRadius: 10, zIndex: 100, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 8, elevation: 8 },
   suggestionItem: { padding: 12, borderBottomWidth: 1, borderBottomColor: Colors.border },
   suggestionName: { fontSize: 14, fontWeight: '600', color: Colors.text },
@@ -1309,4 +1414,15 @@ const styles = StyleSheet.create({
   modalOptionSelected: { backgroundColor: Colors.accentLight },
   modalOptionText: { fontSize: 15, color: Colors.text },
   modalOptionTextSelected: { color: Colors.primary, fontWeight: '700' },
+  // 0.1刻み倍率ステッパー（傾斜倍率モーダル・参加者ごとの倍率モーダル共通）
+  stepperRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 20, paddingHorizontal: 24, marginBottom: 16 },
+  stepperBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: Colors.background, borderWidth: 2, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' },
+  stepperBtnDisabled: { opacity: 0.35 },
+  stepperBtnText: { fontSize: 22, fontWeight: '700', color: Colors.text, lineHeight: 24 },
+  stepperValue: { fontSize: 22, fontWeight: '700', color: Colors.primary, minWidth: 130, textAlign: 'center' },
+  presetChipRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, paddingHorizontal: 24, marginBottom: 16 },
+  presetChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, borderWidth: 1.5, borderColor: Colors.border, backgroundColor: Colors.background },
+  presetChipActive: { borderColor: Colors.primary, backgroundColor: Colors.accentLight },
+  presetChipText: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
+  presetChipTextActive: { color: Colors.primary },
 })
