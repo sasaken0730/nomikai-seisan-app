@@ -31,7 +31,7 @@
 
 | 種別 | 技術 |
 |------|------|
-| フロントエンド | React Native + Expo (SDK 55) |
+| フロントエンド | React Native + Expo (SDK 56) |
 | 言語 | TypeScript |
 | バックエンド | Supabase（PostgreSQL + RLS） |
 | ストレージ | @react-native-async-storage/async-storage 2.2.0 |
@@ -87,7 +87,8 @@ npx expo start --host localhost --port 8085
 **注意**：
 - `--host localhost` を付けないと、シミュレーターが開発サーバーに繋がらないことがある
 - ポート 8085 を使うのは、他アプリと衝突を避けるため
-- Expo Go（App Store版）は SDK 55 と非互換のため、Xcode iOS Simulator 推奨
+- **Expo Go（App Store版）は最新SDKのみ対応**（現在 SDK 58）。本プロジェクトは SDK 56 のため、
+  実機のExpo Goでは開けない。**Xcode iOS Simulator** か、EAS の development build を使うこと
 
 ---
 
@@ -97,15 +98,26 @@ npx expo start --host localhost --port 8085
 - `nomikai_seisan_rooms`：精算ルーム
 - `nomikai_seisan_participants`：参加者
 - `nomikai_seisan_events`：イベント（1次会／2次会等）
+- `nomikai_seisan_event_attendances`：出席（会 × 参加者）。`fixed_amount` で会ごとの固定額を保持
 - `nomikai_seisan_templates`：テンプレート（保存・再利用用）
+- `nomikai_seisan_feedback`：アプリへの評価・改善要望（INSERTのみ許可）
+
+**マイグレーション**：
+`supabase/migrations/` に SQL を置いている。**本番には適用済み**（2026-11-14）。
+新しい環境を作る場合は Supabase ダッシュボードの SQL Editor で順に実行すること。
 
 **重要カラム**：
 - `nomikai_seisan_events.payer_participant_id`：立替者ID（UUID、NULL可）
   → メンバー削除時は ON DELETE SET NULL
 
 **RLS（Row Level Security）**：
-- 現状は anon キーで全アクセス可（個人開発のため）
-- 公開後はユーザー認証ベースの RLS 追加を検討
+- ⚠️ **未整備**。`rooms` / `participants` / `events` / `templates` は anon キーで
+  SELECT・UPDATE・DELETE がすべて可能な状態（2026-11-14 に検証済み）。
+  anon キーはアプリに同梱される公開値のため、第三者が全データを閲覧・改変できる
+- `nomikai_seisan_feedback` のみ INSERT 専用ポリシーで保護済み
+- **対応方針**：Supabase の匿名サインインを有効化 → `rooms.owner_id` を追加 →
+  UPDATE/DELETE は `owner_id = auth.uid()`、SELECT は share_id ベース、という順で整備する。
+  申請とは独立した課題だが、優先度は高い
 
 ---
 
@@ -247,5 +259,5 @@ App Store Connect にアクセスして以下を入力：
 
 ---
 
-最終更新：2026-06-21
+最終更新：2026-11-14
 作成：ささけん（Claude 経由）
