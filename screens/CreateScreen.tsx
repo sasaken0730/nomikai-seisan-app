@@ -21,6 +21,8 @@ interface ParticipantState {
   fixed_amount: string
   manual_multiplier: string
   attendances: boolean[]
+  // 会ごとの固定額（文字列。空なら固定しない＝通常の傾斜配分）
+  fixedByEvent: string[]
 }
 
 interface EventState {
@@ -44,6 +46,7 @@ function makeParticipant(evtCount: number): ParticipantState {
     fixed_amount: '',
     manual_multiplier: '1.0',
     attendances: Array<boolean>(evtCount).fill(true),
+    fixedByEvent: Array<string>(evtCount).fill(''),
   }
 }
 
@@ -73,22 +76,21 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
 
   const [suggestions, setSuggestions] = useState<{ idx: number; list: Suggestion[] } | null>(null)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [memberPickerIdx, setMemberPickerIdx] = useState<number | null>(null)
+  const [memberPickerOpen, setMemberPickerOpen] = useState(false)
   const [memberPickerList, setMemberPickerList] = useState<Suggestion[]>([])
+  const [memberPickerSelected, setMemberPickerSelected] = useState<Set<string>>(new Set())
   const [presetModalIdx, setPresetModalIdx] = useState<number | null>(null)
   const [tiltModalOpen, setTiltModalOpen] = useState(false)
   const [tiltHelpOpen, setTiltHelpOpen] = useState(false)
-  const [multiplierModalIdx, setMultiplierModalIdx] = useState<number | null>(null)
-  const [roleModalIdx, setRoleModalIdx] = useState<number | null>(null)
-  // 参加者カードの「幹事・固定額」詳細を手動で開いた行（デフォルトは閉じた1行表示）
-  const [expandedParticipantIdx, setExpandedParticipantIdx] = useState<Set<number>>(new Set())
-  const toggleParticipantDetail = (i: number) => {
-    setExpandedParticipantIdx((prev) => {
-      const next = new Set(prev)
-      if (next.has(i)) next.delete(i); else next.add(i)
-      return next
-    })
-  }
+  // 参加者1人分の設定（役職・年次／倍率・固定額）をまとめて開くシート。
+  // 行の中に入力欄を並べると1人あたり4行になっていたため、行外に退避した。
+  const [detailSheetIdx, setDetailSheetIdx] = useState<number | null>(null)
+  // 幹事（丸めの端数をまとめて負担する人）は部屋に1人だけ（organizerIdxは単一値）なので、行ごとではなく1箇所で選ぶ
+  const [organizerPickerOpen, setOrganizerPickerOpen] = useState(false)
+  // 出席マトリクスのセル長押しで開く「この会だけの設定」
+  const [fixedCell, setFixedCell] = useState<{ pIdx: number; eIdx: number } | null>(null)
+  // 名前をまとめて入力する欄（改行・カンマ・読点区切り）
+  const [bulkNames, setBulkNames] = useState('')
   const [showDatePicker, setShowDatePicker] = useState(false)
   const [pickerDate, setPickerDate] = useState(new Date())
   const [deviceId, setDeviceId] = useState<string | null>(null)
@@ -147,7 +149,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
       const { data: rawEvents } = await supabase.from('nomikai_seisan_events').select('*').eq('room_id', room.id).order('sort_order', { ascending: true })
       const eventIds = (rawEvents ?? []).map((e) => e.id as string)
       const { data: rawAttendances } = eventIds.length
-        ? await supabase.from('nomikai_seisan_event_attendances').select('event_id, participant_id').in('event_id', eventIds)
+        ? await supabase.from('nomikai_seisan_event_attendances').select('event_id, participant_id, fixed_amount').in('event_id', eventIds)
         : { data: [] }
       const pData = rawParticipants ?? []
       const eData = rawEvents ?? []
@@ -168,6 +170,12 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
         fixed_amount: p.fixed_amount != null ? String(p.fixed_amount) : '',
         manual_multiplier: String(p.manual_multiplier ?? '1.0'),
         attendances: eData.map((e) => (rawAttendances ?? []).some((a) => a.event_id === e.id && a.participant_id === pData[pIdx].id)),
+        fixedByEvent: eData.map((e) => {
+          const row = (rawAttendances ?? []).find(
+            (a) => a.event_id === e.id && a.participant_id === pData[pIdx].id
+          ) as { fixed_amount?: number | null } | undefined
+          return row?.fixed_amount != null ? String(row.fixed_amount) : ''
+        }),
       })))
     } finally {
       setInitialLoading(false)
@@ -214,7 +222,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
       console.log('[loadFromTemplate] セット後:', JSON.stringify(newEvents.map((e) => ({ name: e.name, totalAmount: e.totalAmount, payerIdx: e.payerParticipantIdx }))))
       setEvents(newEvents)
       setOrganizerIdx(orgIdx >= 0 ? orgIdx : null)
-      setParticipants(pData.map((p) => ({ name: p.name, role: p.role, tenure_years: p.tenure_years != null ? String(p.tenure_years) : '', fixed_amount: '', manual_multiplier: String(p.manual_multiplier ?? 1.0), attendances: Array<boolean>(evtCount).fill(true) })))
+      setParticipants(pData.map((p) => ({ name: p.name, role: p.role, tenure_years: p.tenure_years != null ? String(p.tenure_years) : '', fixed_amount: '', manual_multiplier: String(p.manual_multiplier ?? 1.0), attendances: Array<boolean>(evtCount).fill(true), fixedByEvent: Array<string>(evtCount).fill('') })))
     } finally {
       setInitialLoading(false)
     }
@@ -230,7 +238,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
       const { data: rawEvents } = await supabase.from('nomikai_seisan_events').select('*').eq('room_id', room.id).order('sort_order', { ascending: true })
       const eventIds = (rawEvents ?? []).map((e) => e.id as string)
       const { data: rawAttendances } = eventIds.length
-        ? await supabase.from('nomikai_seisan_event_attendances').select('event_id, participant_id').in('event_id', eventIds)
+        ? await supabase.from('nomikai_seisan_event_attendances').select('event_id, participant_id, fixed_amount').in('event_id', eventIds)
         : { data: [] }
       const pData = rawParticipants ?? []
       const eData = rawEvents ?? []
@@ -268,6 +276,14 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
         attendances: membersOnly
           ? [true]
           : eData.map((e) => (rawAttendances ?? []).some((a) => a.event_id === e.id && a.participant_id === pData[pIdx].id)),
+        fixedByEvent: membersOnly
+          ? ['']
+          : eData.map((e) => {
+              const row = (rawAttendances ?? []).find(
+                (a) => a.event_id === e.id && a.participant_id === pData[pIdx].id
+              ) as { fixed_amount?: number | null } | undefined
+              return row?.fixed_amount != null ? String(row.fixed_amount) : ''
+            }),
       })))
     } finally {
       setInitialLoading(false)
@@ -306,6 +322,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
         fixed_amount: '',
         manual_multiplier: String(p.manual_multiplier ?? 1.0),
         attendances: p.attendances ?? Array<boolean>(evtCount).fill(true),
+        fixedByEvent: Array<string>(evtCount).fill(''),
       })))
     } finally {
       setInitialLoading(false)
@@ -410,12 +427,12 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
   const addEvent = () => {
     const name = defaultEventName(events.length)
     setEvents([...events, { name, totalAmount: '', splitMode: 'tilt', payerParticipantIdx: organizerIdx }])
-    setParticipants(participants.map((p) => ({ ...p, attendances: [...p.attendances, true] })))
+    setParticipants(participants.map((p) => ({ ...p, attendances: [...p.attendances, true], fixedByEvent: [...p.fixedByEvent, ''] })))
   }
 
   const removeEvent = (eIdx: number) => {
     setEvents(events.filter((_, i) => i !== eIdx))
-    setParticipants(participants.map((p) => ({ ...p, attendances: p.attendances.filter((_, i) => i !== eIdx) })))
+    setParticipants(participants.map((p) => ({ ...p, attendances: p.attendances.filter((_, i) => i !== eIdx), fixedByEvent: p.fixedByEvent.filter((_, i) => i !== eIdx) })))
   }
 
   const updateEvent = (eIdx: number, field: keyof EventState, value: string) => {
@@ -425,6 +442,67 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
   }
 
   const addParticipant = () => setParticipants([...participants, makeParticipant(events.length)])
+
+  /** 空いている名前欄を先に埋め、足りない分だけ行を足す。 */
+  function fillNames(prev: ParticipantState[], entries: Partial<ParticipantState>[], evtCount: number): ParticipantState[] {
+    const next = [...prev]
+    for (const entry of entries) {
+      const emptyIdx = next.findIndex((p) => p.name.trim() === '')
+      if (emptyIdx >= 0) next[emptyIdx] = { ...next[emptyIdx], ...entry }
+      else next.push({ ...makeParticipant(evtCount), ...entry })
+    }
+    return next
+  }
+
+  // 改行・カンマ・読点区切りの名前をまとめて参加者にする（1人ずつ追加ボタンを押す手間をなくす）
+  const addBulkNames = () => {
+    const names = bulkNames.split(/[,、，/／\n]/).map((s) => s.trim()).filter((s) => s !== '')
+    if (names.length === 0) return
+    const evtCount = events.length
+    setParticipants((prev) => fillNames(prev, names.map((name) => ({ name })), evtCount))
+    setBulkNames('')
+    Keyboard.dismiss()
+  }
+
+  const openMemberPicker = async () => {
+    if (!deviceId) return
+    const list = await getRecentMembers(deviceId)
+    setMemberPickerList(list)
+    setMemberPickerSelected(new Set())
+    setMemberPickerOpen(true)
+  }
+
+  const toggleMemberPick = (name: string) => {
+    setMemberPickerSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name); else next.add(name)
+      return next
+    })
+  }
+
+  // 過去のメンバーを複数まとめて追加する（1人ずつシートを開き直さなくて済むように）
+  const applyMemberPicker = () => {
+    const picked = memberPickerList.filter((s) => memberPickerSelected.has(s.name))
+    if (picked.length === 0) { setMemberPickerOpen(false); return }
+    const evtCount = events.length
+    setParticipants((prev) => fillNames(prev, picked.map((s) => ({
+      name: s.name,
+      role: s.role,
+      tenure_years: s.tenure_years?.toString() ?? '',
+    })), evtCount))
+    setMemberPickerOpen(false)
+  }
+
+  /** 行のチップに出す文字。未設定の人がひと目で分かるようにする。 */
+  const participantChipLabel = (p: ParticipantState): string => {
+    if (manualMode) return `${p.manual_multiplier}倍`
+    if (p.role !== 'その他役職') return p.role.replace('クラス', '')
+    if (p.tenure_years.trim()) return `${p.tenure_years}年目`
+    return '未設定'
+  }
+
+  const isParticipantConfigured = (p: ParticipantState): boolean =>
+    manualMode || p.role !== 'その他役職' || p.tenure_years.trim() !== ''
 
   const removeParticipant = (i: number) => {
     if (participants.length <= 1) return
@@ -469,10 +547,24 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
     setTiltRatio(next.toFixed(1))
   }
 
+  const adjustTenure = (i: number, delta: number) => {
+    const current = parseInt(participants[i]?.tenure_years || '0', 10) || 0
+    const next = Math.min(50, Math.max(0, current + delta))
+    updateParticipant(i, 'tenure_years', next === 0 ? '' : String(next))
+  }
+
   const adjustMultiplier = (i: number, delta: number) => {
     const current = parseFloat(participants[i]?.manual_multiplier ?? '1.0') || 1.0
     const next = Math.min(5.0, Math.max(1.0, Math.round((current + delta) * 10) / 10))
     updateParticipant(i, 'manual_multiplier', next.toFixed(1))
+  }
+
+  const updateFixedByEvent = (pIdx: number, eIdx: number, value: string) => {
+    const next = [...participants]
+    const arr = [...(next[pIdx].fixedByEvent ?? [])]
+    arr[eIdx] = value
+    next[pIdx] = { ...next[pIdx], fixedByEvent: arr }
+    setParticipants(next)
   }
 
   const updateAttendance = (pIdx: number, eIdx: number, value: boolean) => {
@@ -550,6 +642,12 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
         manual_multiplier: parseFloat(p.manual_multiplier) || 1.0,
       })),
       attendances: validEntries.map(({ p }) => events.map((_, eIdx) => p.attendances[eIdx] ?? true)),
+      attendanceFixed: validEntries.map(({ p }) =>
+        events.map((_, eIdx) => {
+          const v = p.fixedByEvent[eIdx]
+          return v != null && v.trim() !== '' ? Number(v) : null
+        })
+      ),
     }
   }
 
@@ -797,128 +895,112 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
             </TouchableOpacity>
           </View>
 
-          {/* 参加者リスト */}
+          {/* 参加者リスト（1人1行。役職・年次・固定額はチップのシートで設定する） */}
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>参加者</Text>
-            {participants.map((p, i) => {
-              const hasDetail = organizerIdx === i || !!p.fixed_amount
-              const isExpanded = expandedParticipantIdx.has(i) || hasDetail
-              return (
-              <View key={i} style={[styles.participantCard, organizerIdx === i && styles.participantCardOrganizer]}>
-                {/* 1行目：名前 + 役職/倍率 + 削除 */}
-                <View style={styles.nameRow}>
-                  <View style={styles.flex1}>
-                    <View style={styles.nameInputRow}>
-                      <TextInput
-                        style={[styles.input, styles.flex1]}
-                        value={p.name}
-                        onChangeText={(v) => handleNameChange(i, v)}
-                        onBlur={() => setTimeout(() => { if (suggestions?.idx === i) setSuggestions(null) }, 200)}
-                        placeholder={`参加者${i + 1}の名前`}
-                        placeholderTextColor={Colors.placeholder}
-                      />
-                      <TouchableOpacity
-                        style={styles.memberPickerBtn}
-                        hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}
-                        onPress={async () => {
-                          if (!deviceId) return
-                          const list = await getRecentMembers(deviceId)
-                          setMemberPickerList(list)
-                          setMemberPickerIdx(i)
-                        }}
-                      >
-                        <Text style={styles.memberPickerBtnText}>👥</Text>
-                      </TouchableOpacity>
+            <View style={styles.participantHeaderRow}>
+              <Text style={[styles.sectionTitle, styles.sectionTitleInRow]}>参加者</Text>
+              <TouchableOpacity style={styles.fromHistoryBtn} onPress={openMemberPicker}>
+                <Text style={styles.fromHistoryBtnText}>👥 過去のメンバーから</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* 名前の一括入力 */}
+            <View style={styles.bulkRow}>
+              <TextInput
+                style={[styles.input, styles.bulkInput]}
+                value={bulkNames}
+                onChangeText={setBulkNames}
+                placeholder="名前をまとめて入力"
+                placeholderTextColor={Colors.placeholder}
+                multiline
+              />
+              <TouchableOpacity
+                style={[styles.bulkAddBtn, bulkNames.trim() === '' && styles.bulkAddBtnDisabled]}
+                onPress={addBulkNames}
+                disabled={bulkNames.trim() === ''}
+              >
+                <Text style={styles.bulkAddBtnText}>まとめて{'\n'}追加</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.bulkHint}>読点「、」区切り or カンマ「,」区切り or 改行</Text>
+
+            {participants.map((p, i) => (
+              <View
+                key={i}
+                style={[styles.participantRow, suggestions?.idx === i && styles.participantRowActive]}
+              >
+                <View style={styles.flex1}>
+                  <TextInput
+                    style={styles.input}
+                    value={p.name}
+                    onChangeText={(v) => handleNameChange(i, v)}
+                    onBlur={() => setTimeout(() => { if (suggestions?.idx === i) setSuggestions(null) }, 200)}
+                    placeholder={`参加者${i + 1}の名前`}
+                    placeholderTextColor={Colors.placeholder}
+                  />
+                  {suggestions?.idx === i && suggestions.list.length > 0 && (
+                    <View style={styles.suggestionsBox}>
+                      {suggestions.list.map((s) => (
+                        <TouchableOpacity key={s.name} style={styles.suggestionItem} onPress={() => applySuggestion(i, s)}>
+                          <Text style={styles.suggestionName}>{s.name}</Text>
+                          <Text style={styles.suggestionSub}>{s.role}{s.tenure_years ? ` ${s.tenure_years}年目` : ''}</Text>
+                        </TouchableOpacity>
+                      ))}
                     </View>
-                    {suggestions?.idx === i && suggestions.list.length > 0 && (
-                      <View style={styles.suggestionsBox}>
-                        {suggestions.list.map((s) => (
-                          <TouchableOpacity key={s.name} style={styles.suggestionItem} onPress={() => applySuggestion(i, s)}>
-                            <Text style={styles.suggestionName}>{s.name}</Text>
-                            <Text style={styles.suggestionSub}>{s.role}{s.tenure_years ? ` ${s.tenure_years}年目` : ''}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    )}
-                  </View>
-                  {!manualMode ? (
-                    <TouchableOpacity style={styles.compactSelector} onPress={() => setRoleModalIdx(i)} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
-                      <Text style={styles.compactSelectorText} numberOfLines={1}>
-                        {p.role === 'その他役職' ? 'その他' : p.role.replace('クラス', '')}
-                      </Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <TouchableOpacity style={styles.compactSelector} onPress={() => setMultiplierModalIdx(i)} hitSlop={{ top: 15, bottom: 15, left: 15, right: 15 }}>
-                      <Text style={styles.compactSelectorText} numberOfLines={1}>{p.manual_multiplier}倍</Text>
-                    </TouchableOpacity>
-                  )}
-                  {participants.length > 1 && (
-                    <TouchableOpacity onPress={() => removeParticipant(i)} style={styles.removeBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                      <Text style={styles.removeBtnText}>✕</Text>
-                    </TouchableOpacity>
                   )}
                 </View>
-
-                {/* 年次（その他役職を選んだ時だけ表示） */}
-                {!manualMode && p.role === 'その他役職' && (
-                  <>
-                    <View style={styles.tenureRow}>
-                      <TextInput
-                        style={[styles.input, styles.tenureInput]}
-                        value={p.tenure_years}
-                        onChangeText={(v) => updateParticipant(i, 'tenure_years', v)}
-                        placeholder="例: 3年目"
-                        placeholderTextColor={Colors.placeholder}
-                        keyboardType="numeric"
-                        inputAccessoryViewID={Platform.OS === 'ios' ? NUMERIC_ACCESSORY_ID : undefined}
-                      />
-                      <Text style={styles.unit}>年目</Text>
-                    </View>
-                    <Text style={styles.tenureNote}>※未入力の人は1年目扱い（全員未入力だと等分計算）になります</Text>
-                  </>
-                )}
-
-                {/* 幹事・固定額は使う人だけ開く（既に設定済みの行は自動的に開いたままにする） */}
+                {organizerIdx === i && <Text style={styles.organizerMark}>👑</Text>}
                 <TouchableOpacity
-                  style={styles.detailToggle}
-                  onPress={() => toggleParticipantDetail(i)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={[styles.settingChip, !isParticipantConfigured(p) && styles.settingChipUnset]}
+                  onPress={() => setDetailSheetIdx(i)}
+                  hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}
                 >
-                  <Text style={styles.detailToggleText}>
-                    {isExpanded ? '︿ 幹事・固定額を閉じる' : `⋯ 幹事・固定額${hasDetail ? '（設定あり）' : ''}`}
+                  <Text
+                    style={[styles.settingChipText, !isParticipantConfigured(p) && styles.settingChipTextUnset]}
+                    numberOfLines={1}
+                  >
+                    {participantChipLabel(p)} ▾
                   </Text>
                 </TouchableOpacity>
-                {isExpanded && (
-                  <View style={styles.detailRow}>
-                    <TouchableOpacity style={[styles.organizerBtn, organizerIdx === i && styles.organizerBtnActive]} onPress={() => handleSetOrganizer(organizerIdx === i ? null : i)}>
-                      <Text style={styles.organizerBtnText}>{organizerIdx === i ? '👑 幹事' : '🎤 幹事にする'}</Text>
-                    </TouchableOpacity>
-                    <View style={[styles.tenureRow, styles.detailFixedAmountRow]}>
-                      <TextInput
-                        style={[styles.input, styles.flex1]}
-                        value={p.fixed_amount}
-                        onChangeText={(v) => updateParticipant(i, 'fixed_amount', v)}
-                        placeholder="固定額（省略可）"
-                        placeholderTextColor={Colors.placeholder}
-                        keyboardType="numeric"
-                        inputAccessoryViewID={Platform.OS === 'ios' ? NUMERIC_ACCESSORY_ID : undefined}
-                      />
-                      <Text style={styles.unit}>円固定</Text>
-                    </View>
-                  </View>
+                {participants.length > 1 && (
+                  <TouchableOpacity onPress={() => removeParticipant(i)} style={styles.removeBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Text style={styles.removeBtnText}>✕</Text>
+                  </TouchableOpacity>
                 )}
               </View>
-              )
-            })}
+            ))}
+
             <TouchableOpacity style={styles.addBtn} onPress={addParticipant}>
               <Text style={styles.addBtnText}>＋ 参加者を追加</Text>
             </TouchableOpacity>
+
+            {/* 幹事（端数の集約先）は1人だけなので行の外で選ぶ */}
+            <TouchableOpacity style={styles.organizerSelector} onPress={() => setOrganizerPickerOpen(true)}>
+              <Text style={styles.organizerSelectorLabel}>幹事（端数集約）</Text>
+              <Text style={styles.organizerSelectorValue} numberOfLines={1}>
+                {organizerIdx !== null && participants[organizerIdx]?.name.trim()
+                  ? `👑 ${participants[organizerIdx].name.trim()}`
+                  : '未設定'}
+              </Text>
+              <Text style={styles.selectorArrow}>▾</Text>
+            </TouchableOpacity>
+
+            {!manualMode && (
+              <Text style={styles.sectionNote}>
+                ※役職・年次が未設定の人は1年目扱いになります（全員未設定だと等分計算）
+              </Text>
+            )}
           </View>
 
           {/* 出席管理・立替者（マトリクス表） */}
           <View style={styles.card}>
             <Text style={styles.sectionTitle}>出席管理・立替者</Text>
-            <Text style={styles.hint}>セルタップで出席切替　💳 タップで立替者設定（1会につき1人）</Text>
+            <Text style={styles.hint}>
+              セルタップで出席切替・
+              <Text style={styles.hintStrong}>長押しでその会だけ金額を固定</Text>
+              （遅刻・主役など）
+            </Text>
+            <Text style={styles.hint}>💳 タップで立替者設定（1会につき1人）</Text>
             {participants.some((p) => p.name) ? (
               <View style={styles.matrixTable}>
                 {/* 固定名前列 */}
@@ -953,15 +1035,25 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
                           {events.map((ev, eIdx) => {
                             const isAttending = p.attendances[eIdx] ?? true
                             const isPayer = ev.payerParticipantIdx === pIdx
+                            const fixedRaw = p.fixedByEvent?.[eIdx] ?? ''
+                            const hasFixed = isAttending && fixedRaw.trim() !== ''
                             return (
                               <Pressable
                                 key={eIdx}
                                 style={styles.matrixCell}
                                 onPress={() => updateAttendance(pIdx, eIdx, !isAttending)}
+                                onLongPress={() => { if (isAttending) setFixedCell({ pIdx, eIdx }) }}
+                                delayLongPress={300}
                               >
-                                <View style={[styles.matrixCheckBox, isAttending && styles.matrixCheckBoxChecked]}>
-                                  {isAttending && <Text style={styles.matrixCheckMark}>✓</Text>}
-                                </View>
+                                {hasFixed ? (
+                                  <View style={styles.matrixFixedChip}>
+                                    <Text style={styles.matrixFixedChipText} numberOfLines={1}>{fixedRaw}</Text>
+                                  </View>
+                                ) : (
+                                  <View style={[styles.matrixCheckBox, isAttending && styles.matrixCheckBoxChecked]}>
+                                    {isAttending && <Text style={styles.matrixCheckMark}>✓</Text>}
+                                  </View>
+                                )}
                                 <TouchableOpacity
                                   style={[styles.matrixPayerBtn, isPayer && styles.matrixPayerBtnActive]}
                                   onPress={() => {
@@ -1006,7 +1098,7 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
             </View>
           ) : (
             <TouchableOpacity style={[styles.submitBtn, loading && styles.submitBtnDisabled]} onPress={handleSubmit} disabled={loading}>
-              {loading ? <ActivityIndicator color={Colors.textOnPrimary} /> : <Text style={styles.submitBtnText}>精算内容を確定してURLを発行</Text>}
+              {loading ? <ActivityIndicator color={Colors.textOnPrimary} /> : <Text style={styles.submitBtnText}>精算内容を確定して結果を見る</Text>}
             </TouchableOpacity>
           )}
 
@@ -1127,68 +1219,210 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
         </TouchableOpacity>
       </Modal>
 
-      {/* 役職モーダル */}
-      <Modal visible={roleModalIdx !== null} transparent animationType="slide" onRequestClose={() => setRoleModalIdx(null)}>
-        <TouchableOpacity style={styles.modalOverlay} onPress={() => setRoleModalIdx(null)} activeOpacity={1}>
-          <View style={styles.modalSheet}>
-            <Text style={styles.modalTitle}>役職を選択</Text>
-            {ROLES.map((r) => {
-              const selected = roleModalIdx !== null && participants[roleModalIdx]?.role === r
-              return (
-                <TouchableOpacity key={r} style={[styles.modalOption, selected && styles.modalOptionSelected]} onPress={() => { if (roleModalIdx !== null) updateParticipant(roleModalIdx, 'role', r); setRoleModalIdx(null) }}>
-                  <Text style={[styles.modalOptionText, selected && styles.modalOptionTextSelected]}>{r}{ROLE_EQUIVALENT_YEARS[r] ? `（${ROLE_EQUIVALENT_YEARS[r]}年換算）` : '（年次入力）'}</Text>
-                </TouchableOpacity>
-              )
-            })}
-          </View>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* 倍率モーダル（0.1刻みのステッパー＋よく使う倍率のプリセット） */}
-      <Modal visible={multiplierModalIdx !== null} transparent animationType="slide" onRequestClose={() => setMultiplierModalIdx(null)}>
-        <TouchableOpacity style={styles.modalOverlay} onPress={() => setMultiplierModalIdx(null)} activeOpacity={1}>
+      {/* 参加者ごとの設定シート（役職・年次／倍率・固定額をまとめて1枚に） */}
+      <Modal visible={detailSheetIdx !== null} transparent animationType="slide" onRequestClose={() => setDetailSheetIdx(null)}>
+        <TouchableOpacity style={styles.modalOverlay} onPress={() => setDetailSheetIdx(null)} activeOpacity={1}>
           <View style={styles.modalSheet} onStartShouldSetResponder={() => true}>
-            <Text style={styles.modalTitle}>倍率を選択</Text>
-            {multiplierModalIdx !== null && (() => {
-              const idx = multiplierModalIdx
-              const current = parseFloat(participants[idx]?.manual_multiplier ?? '1.0') || 1.0
+            {detailSheetIdx !== null && (() => {
+              const idx = detailSheetIdx
+              const p = participants[idx]
+              if (!p) return null
+              const tenure = parseInt(p.tenure_years || '0', 10) || 0
+              const multiplier = parseFloat(p.manual_multiplier ?? '1.0') || 1.0
               return (
                 <>
-                  <View style={styles.stepperRow}>
-                    <TouchableOpacity
-                      style={[styles.stepperBtn, current <= 1.0 && styles.stepperBtnDisabled]}
-                      onPress={() => adjustMultiplier(idx, -0.1)}
-                      disabled={current <= 1.0}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <Text style={styles.stepperBtnText}>−</Text>
-                    </TouchableOpacity>
-                    <Text style={styles.stepperValue}>{current.toFixed(1)}倍</Text>
-                    <TouchableOpacity
-                      style={[styles.stepperBtn, current >= 5.0 && styles.stepperBtnDisabled]}
-                      onPress={() => adjustMultiplier(idx, 0.1)}
-                      disabled={current >= 5.0}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <Text style={styles.stepperBtnText}>＋</Text>
-                    </TouchableOpacity>
-                  </View>
-                  <View style={styles.presetChipRow}>
-                    {[1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0].map((v) => {
-                      const selected = current.toFixed(1) === v.toFixed(1)
-                      return (
-                        <TouchableOpacity key={v} style={[styles.presetChip, selected && styles.presetChipActive]} onPress={() => updateParticipant(idx, 'manual_multiplier', v.toFixed(1))}>
-                          <Text style={[styles.presetChipText, selected && styles.presetChipTextActive]}>{v.toFixed(1)}</Text>
+                  <Text style={styles.modalTitle}>{p.name.trim() || `参加者${idx + 1}`} の設定</Text>
+
+                  {!manualMode ? (
+                    <>
+                      <Text style={styles.sheetLabel}>役職</Text>
+                      <View style={styles.presetChipRow}>
+                        {ROLES.map((r) => {
+                          const selected = p.role === r
+                          const label = r === 'その他役職'
+                            ? '年次で指定'
+                            : `${r.replace('クラス', '')}（${ROLE_EQUIVALENT_YEARS[r]}年）`
+                          return (
+                            <TouchableOpacity
+                              key={r}
+                              style={[styles.presetChip, selected && styles.presetChipActive]}
+                              onPress={() => updateParticipant(idx, 'role', r)}
+                            >
+                              <Text style={[styles.presetChipText, selected && styles.presetChipTextActive]}>{label}</Text>
+                            </TouchableOpacity>
+                          )
+                        })}
+                      </View>
+
+                      {p.role === 'その他役職' && (
+                        <>
+                          <Text style={styles.sheetLabel}>年次</Text>
+                          <View style={styles.stepperRow}>
+                            <TouchableOpacity
+                              style={[styles.stepperBtn, tenure <= 0 && styles.stepperBtnDisabled]}
+                              onPress={() => adjustTenure(idx, -1)}
+                              disabled={tenure <= 0}
+                              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            >
+                              <Text style={styles.stepperBtnText}>−</Text>
+                            </TouchableOpacity>
+                            <Text style={styles.stepperValue}>{tenure > 0 ? `${tenure}年目` : '未設定'}</Text>
+                            <TouchableOpacity
+                              style={[styles.stepperBtn, tenure >= 50 && styles.stepperBtnDisabled]}
+                              onPress={() => adjustTenure(idx, 1)}
+                              disabled={tenure >= 50}
+                              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                            >
+                              <Text style={styles.stepperBtnText}>＋</Text>
+                            </TouchableOpacity>
+                          </View>
+                          <View style={styles.presetChipRow}>
+                            {[1, 3, 5, 8, 10, 15, 20].map((v) => {
+                              const selected = tenure === v
+                              return (
+                                <TouchableOpacity
+                                  key={v}
+                                  style={[styles.presetChip, selected && styles.presetChipActive]}
+                                  onPress={() => updateParticipant(idx, 'tenure_years', String(v))}
+                                >
+                                  <Text style={[styles.presetChipText, selected && styles.presetChipTextActive]}>{v}年目</Text>
+                                </TouchableOpacity>
+                              )
+                            })}
+                          </View>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <Text style={styles.sheetLabel}>倍率</Text>
+                      <View style={styles.stepperRow}>
+                        <TouchableOpacity
+                          style={[styles.stepperBtn, multiplier <= 1.0 && styles.stepperBtnDisabled]}
+                          onPress={() => adjustMultiplier(idx, -0.1)}
+                          disabled={multiplier <= 1.0}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                          <Text style={styles.stepperBtnText}>−</Text>
                         </TouchableOpacity>
-                      )
-                    })}
-                  </View>
-                  <TouchableOpacity style={styles.tiltHelpCloseBtn} onPress={() => setMultiplierModalIdx(null)}>
+                        <Text style={styles.stepperValue}>{multiplier.toFixed(1)}倍</Text>
+                        <TouchableOpacity
+                          style={[styles.stepperBtn, multiplier >= 5.0 && styles.stepperBtnDisabled]}
+                          onPress={() => adjustMultiplier(idx, 0.1)}
+                          disabled={multiplier >= 5.0}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                          <Text style={styles.stepperBtnText}>＋</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <View style={styles.presetChipRow}>
+                        {[1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0].map((v) => {
+                          const selected = multiplier.toFixed(1) === v.toFixed(1)
+                          return (
+                            <TouchableOpacity
+                              key={v}
+                              style={[styles.presetChip, selected && styles.presetChipActive]}
+                              onPress={() => updateParticipant(idx, 'manual_multiplier', v.toFixed(1))}
+                            >
+                              <Text style={[styles.presetChipText, selected && styles.presetChipTextActive]}>{v.toFixed(1)}</Text>
+                            </TouchableOpacity>
+                          )
+                        })}
+                      </View>
+                    </>
+                  )}
+
+                  <TouchableOpacity style={styles.tiltHelpCloseBtn} onPress={() => setDetailSheetIdx(null)}>
                     <Text style={styles.tiltHelpCloseBtnText}>決定</Text>
                   </TouchableOpacity>
                 </>
               )
             })()}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* セル長押しで開く「この会だけの設定」 */}
+      <Modal visible={fixedCell !== null} transparent animationType="slide" onRequestClose={() => setFixedCell(null)}>
+        <TouchableOpacity style={styles.modalOverlay} onPress={() => setFixedCell(null)} activeOpacity={1}>
+          <View style={styles.modalSheet} onStartShouldSetResponder={() => true}>
+            {fixedCell !== null && (() => {
+              const { pIdx, eIdx } = fixedCell
+              const p = participants[pIdx]
+              const ev = events[eIdx]
+              if (!p || !ev) return null
+              const value = p.fixedByEvent?.[eIdx] ?? ''
+              return (
+                <>
+                  <Text style={styles.modalTitle}>
+                    {p.name.trim() || `参加者${pIdx + 1}`} ・ {ev.name || `${eIdx + 1}次会`}
+                  </Text>
+                  <Text style={styles.sheetLabel}>この会だけ金額を固定する</Text>
+                  <View style={styles.sheetFixedRow}>
+                    <TextInput
+                      style={[styles.input, styles.flex1]}
+                      value={value}
+                      onChangeText={(v) => updateFixedByEvent(pIdx, eIdx, v)}
+                      placeholder="例: 3000"
+                      placeholderTextColor={Colors.placeholder}
+                      keyboardType="numeric"
+                      inputAccessoryViewID={Platform.OS === 'ios' ? NUMERIC_ACCESSORY_ID : undefined}
+                    />
+                    <Text style={styles.unit}>円</Text>
+                  </View>
+                  <Text style={styles.sheetNote}>
+                    遅刻・主役・あまり飲まなかった人などに使います。空欄にすると通常の傾斜配分に戻ります
+                  </Text>
+                  <View style={styles.sheetBtnRow}>
+                    <TouchableOpacity
+                      style={[styles.tiltHelpCloseBtn, styles.flex1]}
+                      onPress={() => { updateFixedByEvent(pIdx, eIdx, ''); setFixedCell(null) }}
+                    >
+                      <Text style={styles.tiltHelpCloseBtnText}>固定しない</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.sheetPrimaryBtn, styles.flex1]}
+                      onPress={() => setFixedCell(null)}
+                    >
+                      <Text style={styles.sheetPrimaryBtnText}>決定</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )
+            })()}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* 幹事（端数集約）の選択。organizerIdxは単一値なのでここで1回だけ選ぶ */}
+      <Modal visible={organizerPickerOpen} transparent animationType="slide" onRequestClose={() => setOrganizerPickerOpen(false)}>
+        <TouchableOpacity style={styles.modalOverlay} onPress={() => setOrganizerPickerOpen(false)} activeOpacity={1}>
+          <View style={styles.modalSheet} onStartShouldSetResponder={() => true}>
+            <Text style={styles.modalTitle}>幹事（端数集約）を選択</Text>
+            <TouchableOpacity
+              style={[styles.modalOption, organizerIdx === null && styles.modalOptionSelected]}
+              onPress={() => { handleSetOrganizer(null); setOrganizerPickerOpen(false) }}
+            >
+              <Text style={[styles.modalOptionText, organizerIdx === null && styles.modalOptionTextSelected]}>幹事なし</Text>
+            </TouchableOpacity>
+            {participants.map((p, i) => {
+              if (!p.name.trim()) return null
+              const selected = organizerIdx === i
+              return (
+                <TouchableOpacity
+                  key={i}
+                  style={[styles.modalOption, selected && styles.modalOptionSelected]}
+                  onPress={() => { handleSetOrganizer(i); setOrganizerPickerOpen(false) }}
+                >
+                  <Text style={[styles.modalOptionText, selected && styles.modalOptionTextSelected]}>
+                    {selected ? '👑 ' : ''}{p.name.trim()}
+                  </Text>
+                </TouchableOpacity>
+              )
+            })}
+            {participants.every((p) => !p.name.trim()) && (
+              <Text style={[styles.hint, { textAlign: 'center', paddingVertical: 16 }]}>先に参加者の名前を入力してください</Text>
+            )}
           </View>
         </TouchableOpacity>
       </Modal>
@@ -1207,36 +1441,51 @@ export default function CreateScreen({ navigation, route }: CreateScreenProps) {
         </TouchableOpacity>
       </Modal>
 
-      {/* メンバー選択モーダル */}
-      <Modal visible={memberPickerIdx !== null} transparent animationType="slide" onRequestClose={() => setMemberPickerIdx(null)}>
-        <TouchableOpacity style={styles.modalOverlay} onPress={() => setMemberPickerIdx(null)} activeOpacity={1}>
+      {/* メンバー選択モーダル（複数選択してまとめて追加する） */}
+      <Modal visible={memberPickerOpen} transparent animationType="slide" onRequestClose={() => setMemberPickerOpen(false)}>
+        <TouchableOpacity style={styles.modalOverlay} onPress={() => setMemberPickerOpen(false)} activeOpacity={1}>
           <View style={styles.memberPickerSheet} onStartShouldSetResponder={() => true}>
             {/* 固定ヘッダー */}
             <View style={styles.memberPickerHeader}>
               <Text style={styles.memberPickerTitle}>過去のメンバーから選択</Text>
-              <TouchableOpacity onPress={() => setMemberPickerIdx(null)} style={styles.memberPickerCloseBtn}>
+              <TouchableOpacity onPress={() => setMemberPickerOpen(false)} style={styles.memberPickerCloseBtn}>
                 <Text style={styles.memberPickerCloseText}>✕ 閉じる</Text>
               </TouchableOpacity>
             </View>
-            {/* スクロールリスト */}
             {memberPickerList.length === 0 ? (
               <Text style={[styles.hint, { textAlign: 'center', paddingVertical: 24 }]}>過去のメンバーがいません</Text>
             ) : (
-              <ScrollView style={styles.memberPickerList}>
-                {memberPickerList.map((s) => (
-                  <TouchableOpacity
-                    key={s.name}
-                    style={styles.modalOption}
-                    onPress={() => {
-                      if (memberPickerIdx !== null) applySuggestion(memberPickerIdx, s)
-                      setMemberPickerIdx(null)
-                    }}
-                  >
-                    <Text style={styles.modalOptionText}>{s.name}</Text>
-                    <Text style={styles.memberPickerSub}>{s.role}{s.tenure_years ? ` ${s.tenure_years}年目` : ''}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+              <>
+                <ScrollView style={styles.memberPickerList}>
+                  {memberPickerList.map((s) => {
+                    const checked = memberPickerSelected.has(s.name)
+                    return (
+                      <TouchableOpacity
+                        key={s.name}
+                        style={[styles.memberPickerOption, checked && styles.modalOptionSelected]}
+                        onPress={() => toggleMemberPick(s.name)}
+                      >
+                        <View style={[styles.memberCheckBox, checked && styles.memberCheckBoxChecked]}>
+                          {checked && <Text style={styles.memberCheckMark}>✓</Text>}
+                        </View>
+                        <View style={styles.flex1}>
+                          <Text style={styles.modalOptionText}>{s.name}</Text>
+                          <Text style={styles.memberPickerSub}>{s.role}{s.tenure_years ? ` ${s.tenure_years}年目` : ''}</Text>
+                        </View>
+                      </TouchableOpacity>
+                    )
+                  })}
+                </ScrollView>
+                <TouchableOpacity
+                  style={[styles.memberPickerApplyBtn, memberPickerSelected.size === 0 && styles.submitBtnDisabled]}
+                  onPress={applyMemberPicker}
+                  disabled={memberPickerSelected.size === 0}
+                >
+                  <Text style={styles.memberPickerApplyBtnText}>
+                    {memberPickerSelected.size > 0 ? `${memberPickerSelected.size}人を追加` : '追加するメンバーを選択'}
+                  </Text>
+                </TouchableOpacity>
+              </>
             )}
           </View>
         </TouchableOpacity>
@@ -1295,6 +1544,8 @@ const styles = StyleSheet.create({
   selectorText: { fontSize: 14, color: Colors.text, flex: 1 },
   selectorArrow: { fontSize: 12, color: Colors.placeholder, marginLeft: 8 },
   hint: { fontSize: 12, color: Colors.placeholder, marginTop: 4 },
+  // 長押しは気づかれにくいので、ヒントの中でそこだけ強調する
+  hintStrong: { fontWeight: '700', color: Colors.primary },
   tiltExplainRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
   tiltExplainText: { flex: 1, fontSize: 12, color: Colors.placeholder, marginRight: 8 },
   tiltExplainLink: { fontSize: 12, color: Colors.primary, fontWeight: '600' },
@@ -1324,31 +1575,50 @@ const styles = StyleSheet.create({
   splitBtnEqualTextActive: { color: Colors.textOnPrimary },
   addBtn: { borderWidth: 2, borderStyle: 'dashed', borderColor: Colors.accentLight, borderRadius: 10, paddingVertical: 12, alignItems: 'center', marginTop: 4 },
   addBtnText: { color: Colors.warning, fontSize: 14 },
-  participantCard: { borderWidth: 2, borderColor: Colors.border, borderRadius: 12, padding: 12, marginBottom: 10, backgroundColor: Colors.background },
-  participantCardOrganizer: { borderColor: Colors.warning, backgroundColor: Colors.accentLight },
-  nameRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 8 },
-  organizerBtn: { borderWidth: 2, borderColor: Colors.border, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 8, backgroundColor: Colors.card },
-  organizerBtnActive: { borderColor: Colors.accent, backgroundColor: Colors.accent },
-  organizerBtnText: { fontSize: 12, fontWeight: '700', color: Colors.text },
-  tenureRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
-  tenureInput: { width: 110, textAlign: 'center' },
-  tenureNote: { fontSize: 11, color: Colors.placeholder, marginTop: 4 },
-  // 名前行に収める役職/倍率の簡易表示（タップでモーダルを開く。フル幅セレクタより軽量）
-  compactSelector: { paddingHorizontal: 10, paddingVertical: 9, borderRadius: 8, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.card, maxWidth: 92 },
-  compactSelectorText: { fontSize: 13, color: Colors.text, fontWeight: '600', textAlign: 'center' },
-  // 幹事・固定額の開閉トグル（デフォルト非表示、設定済みの行は自動展開）
-  detailToggle: { marginTop: 8, alignSelf: 'flex-start' },
-  detailToggleText: { fontSize: 12, color: Colors.textSecondary, fontWeight: '600' },
-  detailRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
-  detailFixedAmountRow: { flex: 1, marginTop: 0 },
+  sectionTitleInRow: { marginBottom: 0 },
+  participantHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  fromHistoryBtn: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: 8, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.background },
+  fromHistoryBtnText: { fontSize: 12, fontWeight: '600', color: Colors.text },
+  // 名前の一括入力（1人ずつ追加ボタンを押す手間をなくすための入口）
+  bulkRow: { flexDirection: 'row', alignItems: 'stretch', gap: 8 },
+  bulkHint: { fontSize: 12, color: Colors.placeholder, marginTop: 6, marginBottom: 12 },
+  bulkInput: { flex: 1, minHeight: 58, paddingTop: 10, textAlignVertical: 'top' },
+  bulkAddBtn: { width: 78, borderRadius: 10, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' },
+  bulkAddBtnDisabled: { opacity: 0.4 },
+  bulkAddBtnText: { color: Colors.textOnPrimary, fontSize: 12, fontWeight: '700', textAlign: 'center', lineHeight: 16 },
+  // 参加者は1人1行。役職・年次・固定額はチップから開くシートで設定する
+  participantRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  participantRowActive: { zIndex: 10 },
+  organizerMark: { fontSize: 14 },
+  settingChip: { paddingHorizontal: 10, paddingVertical: 9, borderRadius: 8, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.card, minWidth: 76, maxWidth: 112 },
+  settingChipUnset: { borderColor: Colors.warning, borderStyle: 'dashed', backgroundColor: Colors.warningLight },
+  settingChipText: { fontSize: 13, color: Colors.text, fontWeight: '600', textAlign: 'center' },
+  settingChipTextUnset: { color: Colors.warning },
+  organizerSelector: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: Colors.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11, backgroundColor: Colors.card, marginTop: 10 },
+  organizerSelectorLabel: { fontSize: 13, color: Colors.textSecondary, fontWeight: '600' },
+  organizerSelectorValue: { flex: 1, fontSize: 14, color: Colors.text, textAlign: 'right' },
+  sectionNote: { fontSize: 11, color: Colors.placeholder, marginTop: 8, lineHeight: 16 },
+  // 参加者ごとの設定シート
+  sheetLabel: { fontSize: 13, fontWeight: '700', color: Colors.textSecondary, paddingHorizontal: 24, marginBottom: 8 },
+  sheetFixedRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 24, marginBottom: 16 },
+  sheetNote: { fontSize: 12, color: Colors.placeholder, paddingHorizontal: 24, marginBottom: 16, lineHeight: 18 },
+  sheetBtnRow: { flexDirection: 'row', gap: 10, paddingHorizontal: 24 },
+  sheetPrimaryBtn: { backgroundColor: Colors.primary, borderRadius: 10, paddingVertical: 12, alignItems: 'center' },
+  sheetPrimaryBtnText: { fontSize: 14, fontWeight: '700', color: Colors.textOnPrimary },
+  // 会ごとに金額を固定したセル
+  matrixFixedChip: { paddingHorizontal: 5, paddingVertical: 3, borderRadius: 5, backgroundColor: Colors.accentLight, borderWidth: 1, borderColor: Colors.accent, maxWidth: 46 },
+  matrixFixedChipText: { fontSize: 10, fontWeight: '700', color: Colors.text },
   suggestionsBox: { position: 'absolute', top: 44, left: 0, right: 0, backgroundColor: Colors.card, borderWidth: 1, borderColor: Colors.accentLight, borderRadius: 10, zIndex: 100, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 8, elevation: 8 },
   suggestionItem: { padding: 12, borderBottomWidth: 1, borderBottomColor: Colors.border },
   suggestionName: { fontSize: 14, fontWeight: '600', color: Colors.text },
   suggestionSub: { fontSize: 12, color: Colors.placeholder, marginTop: 2 },
-  // 名前入力行（👥ボタン付き）
-  nameInputRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  memberPickerBtn: { width: 38, height: 38, borderRadius: 8, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.background, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  memberPickerBtnText: { fontSize: 16 },
+  // 過去メンバーの複数選択リスト
+  memberPickerOption: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, paddingHorizontal: 24, borderBottomWidth: 1, borderBottomColor: Colors.border },
+  memberCheckBox: { width: 22, height: 22, borderRadius: 5, borderWidth: 2, borderColor: Colors.border, backgroundColor: Colors.card, alignItems: 'center', justifyContent: 'center' },
+  memberCheckBoxChecked: { borderColor: Colors.primary, backgroundColor: Colors.primary },
+  memberCheckMark: { color: Colors.textOnPrimary, fontSize: 12, fontWeight: '700' },
+  memberPickerApplyBtn: { marginHorizontal: 24, marginTop: 14, backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  memberPickerApplyBtnText: { color: Colors.textOnPrimary, fontSize: 15, fontWeight: '700' },
   memberPickerSub: { fontSize: 12, color: Colors.placeholder, marginTop: 2 },
   memberPickerSheet: { backgroundColor: Colors.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 0, paddingBottom: 40, maxHeight: '70%' },
   memberPickerHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: Colors.border },

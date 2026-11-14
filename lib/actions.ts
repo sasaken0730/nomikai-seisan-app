@@ -25,6 +25,8 @@ export interface RoomInput {
   events: EventData[]
   participants: ParticipantData[]
   attendances: boolean[][] // attendances[participantIdx][eventIdx]
+  // 会ごとの固定額。attendanceFixed[participantIdx][eventIdx]。null は固定しない（通常の傾斜配分）。
+  attendanceFixed?: (number | null)[][]
 }
 
 async function insertRoomData(roomId: string, input: RoomInput): Promise<void> {
@@ -64,7 +66,7 @@ async function insertRoomData(roomId: string, input: RoomInput): Promise<void> {
 
   if (eventError || !dbEvents) throw new Error(eventError?.message ?? 'イベントの保存に失敗しました')
 
-  const attendanceRows: { event_id: string; participant_id: string }[] = []
+  const attendanceRows: { event_id: string; participant_id: string; fixed_amount: number | null }[] = []
   input.attendances.forEach((row, pIdx) => {
     if (pIdx >= dbParticipants.length) return
     row.forEach((attended, eIdx) => {
@@ -72,6 +74,7 @@ async function insertRoomData(roomId: string, input: RoomInput): Promise<void> {
         attendanceRows.push({
           event_id: dbEvents[eIdx].id as string,
           participant_id: dbParticipants[pIdx].id as string,
+          fixed_amount: input.attendanceFixed?.[pIdx]?.[eIdx] ?? null,
         })
       }
     })

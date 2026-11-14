@@ -45,6 +45,61 @@ export interface EventInput {
   amount: number
   attendeeIds: string[]
   splitMode?: 'tilt' | 'equal' // 'equal': 均等割り, 'tilt': 傾斜配分（デフォルト）
+  /**
+   * この会だけ支払額を固定する人。participantId → 金額。
+   * 遅刻・主役・下戸など「その会に限った事情」を表すための指定。
+   */
+  fixedAmounts?: Record<string, number>
+}
+
+/**
+ * (会 → 参加者 → 固定額) を組み立てる。
+ * 会ごとの指定(EventInput.fixedAmounts)を優先し、1件も指定が無い参加者についてのみ
+ * 旧方式の参加者単位 fixed_amount を会の金額比で按分して補う（過去データの互換）。
+ */
+function buildFixedByEvent(
+  participants: ParticipantInput[],
+  activeEvents: EventInput[]
+): Map<string, Map<string, number>> {
+  const byEvent = new Map<string, Map<string, number>>()
+  activeEvents.forEach((e) => byEvent.set(e.id, new Map()))
+
+  const hasPerEvent = new Set<string>()
+  for (const e of activeEvents) {
+    const m = byEvent.get(e.id)!
+    for (const [pid, amount] of Object.entries(e.fixedAmounts ?? {})) {
+      if (!e.attendeeIds.includes(pid)) continue
+      m.set(pid, amount)
+      hasPerEvent.add(pid)
+    }
+  }
+
+  for (const p of participants) {
+    if (p.fixed_amount == null || hasPerEvent.has(p.id)) continue
+    const attended = activeEvents.filter((e) => e.attendeeIds.includes(p.id))
+    const totalAttended = attended.reduce((s, e) => s + e.amount, 0)
+    if (totalAttended <= 0) continue
+    attended.forEach((e) => {
+      byEvent.get(e.id)!.set(p.id, (p.fixed_amount! * e.amount) / totalAttended)
+    })
+  }
+
+  return byEvent
+}
+
+/** 会ごとのウェイト。均等割り／手動倍率／年次傾斜を切り替える。 */
+function eventWeights(
+  attendees: ParticipantInput[],
+  event: EventInput,
+  gradient: number,
+  manualMode: boolean
+): number[] {
+  if (event.splitMode === 'equal') return attendees.map(() => 1)
+  if (manualMode) return getManualWeights(attendees)
+  const years = attendees.map((p) => getEquivalentYears(p.role, p.tenure_years))
+  const minY = Math.min(...years)
+  const maxY = Math.max(...years)
+  return years.map((y) => (maxY === minY ? 1 : 1 + ((y - minY) / (maxY - minY)) * (gradient - 1)))
 }
 
 export interface PaymentResult extends ParticipantInput {
@@ -63,59 +118,36 @@ export function calculateRawPayments(
   manualMode = false
 ): PaymentResult[] {
   const activeEvents = events.filter((e) => e.amount > 0)
-  const grandTotal = activeEvents.reduce((sum, e) => sum + e.amount, 0)
+  const fixedByEvent = buildFixedByEvent(participants, activeEvents)
 
-  if (grandTotal === 0) {
-    return participants.map((p) => ({ ...p, rawPayment: p.fixed_amount ?? 0 }))
-  }
-
-  const fixed = participants.filter((p) => p.fixed_amount != null)
-  const nonFixed = participants.filter((p) => p.fixed_amount == null)
-  const totalFixed = fixed.reduce((sum, p) => sum + (p.fixed_amount ?? 0), 0)
-  const remaining = grandTotal - totalFixed
-
-  const exposures = new Map<string, number>()
-  nonFixed.forEach((p) => exposures.set(p.id, 0))
+  const totals = new Map<string, number>()
+  participants.forEach((p) => totals.set(p.id, 0))
 
   for (const event of activeEvents) {
-    const attendees = nonFixed.filter((p) => event.attendeeIds.includes(p.id))
+    const fixedHere = fixedByEvent.get(event.id)!
+    const attendees = participants.filter((p) => event.attendeeIds.includes(p.id))
     if (attendees.length === 0) continue
 
-    let weights: number[]
-    if (event.splitMode === 'equal') {
-      weights = attendees.map(() => 1)
-    } else if (manualMode) {
-      weights = getManualWeights(attendees)
-    } else {
-      const years = attendees.map((p) => getEquivalentYears(p.role, p.tenure_years))
-      const minY = Math.min(...years)
-      const maxY = Math.max(...years)
-      weights = years.map((y) =>
-        maxY === minY ? 1 : 1 + ((y - minY) / (maxY - minY)) * (gradient - 1)
-      )
+    // 固定額の人は会ごとにその額をそのまま負担し、残りを傾斜で分ける
+    let pool = event.amount
+    for (const p of attendees) {
+      const f = fixedHere.get(p.id)
+      if (f == null) continue
+      totals.set(p.id, (totals.get(p.id) ?? 0) + f)
+      pool -= f
     }
+
+    const spread = attendees.filter((p) => fixedHere.get(p.id) == null)
+    if (spread.length === 0 || pool <= 0) continue
+
+    const weights = eventWeights(spread, event, gradient, manualMode)
     const totalWeight = weights.reduce((s, w) => s + w, 0)
-
-    attendees.forEach((p, i) => {
-      exposures.set(p.id, (exposures.get(p.id) ?? 0) + (event.amount * weights[i]) / totalWeight)
+    spread.forEach((p, i) => {
+      totals.set(p.id, (totals.get(p.id) ?? 0) + (pool * weights[i]) / totalWeight)
     })
   }
 
-  const totalExposure = [...exposures.values()].reduce((s, e) => s + e, 0)
-
-  const rawMap = new Map<string, number>()
-  if (remaining <= 0) {
-    nonFixed.forEach((p) => rawMap.set(p.id, 0))
-  } else if (totalExposure === 0) {
-    nonFixed.forEach((p) => rawMap.set(p.id, remaining / nonFixed.length))
-  } else {
-    nonFixed.forEach((p) => {
-      rawMap.set(p.id, (remaining * (exposures.get(p.id) ?? 0)) / totalExposure)
-    })
-  }
-  fixed.forEach((p) => rawMap.set(p.id, p.fixed_amount!))
-
-  return participants.map((p) => ({ ...p, rawPayment: rawMap.get(p.id) ?? 0 }))
+  return participants.map((p) => ({ ...p, rawPayment: totals.get(p.id) ?? 0 }))
 }
 
 // 会ごとに最大剰余法で丸めを適用（倍率を保持）、unit未満の端数のみ幹事が吸収
@@ -136,56 +168,31 @@ export function applyRoundingPerEvent(
 
   const organizerId = participants.find((p) => p.is_organizer)?.id
 
-  // 固定額参加者の各会への按分額を事前計算（参加会の金額比率で按分）
-  const fixedContrib = new Map<string, Map<string, number>>()
-  participants
-    .filter((p) => p.fixed_amount != null)
-    .forEach((p) => {
-      const totalAttended = activeEvents
-        .filter((e) => e.attendeeIds.includes(p.id))
-        .reduce((s, e) => s + e.amount, 0)
-      const byEvent = new Map<string, number>()
-      activeEvents.forEach((e) => {
-        byEvent.set(e.id, totalAttended > 0 ? (p.fixed_amount! * e.amount) / totalAttended : 0)
-      })
-      fixedContrib.set(p.id, byEvent)
-    })
+  // (会 → 参加者 → 固定額)。会ごとの指定が無い場合のみ旧方式の按分で補う。
+  const fixedByEvent = buildFixedByEvent(participants, activeEvents)
 
   for (const event of activeEvents) {
-    const nonFixedAttendees = participants.filter(
-      (p) => p.fixed_amount == null && event.attendeeIds.includes(p.id)
-    )
-    const fixedAttendees = participants.filter(
-      (p) => p.fixed_amount != null && event.attendeeIds.includes(p.id)
-    )
+    const fixedHere = fixedByEvent.get(event.id)!
+    const attendees = participants.filter((p) => event.attendeeIds.includes(p.id))
+    const nonFixedAttendees = attendees.filter((p) => fixedHere.get(p.id) == null)
+    const eventIdx = events.findIndex((e) => e.id === event.id)
 
-    fixedAttendees.forEach((p) => {
-      const contrib = fixedContrib.get(p.id)?.get(event.id) ?? 0
-      totals.set(p.id, (totals.get(p.id) ?? 0) + contrib)
-    })
+    // 固定額の人はその額で確定（丸めの対象にしない）
+    let fixedShare = 0
+    for (const p of attendees) {
+      const amount = fixedHere.get(p.id)
+      if (amount == null) continue
+      totals.set(p.id, (totals.get(p.id) ?? 0) + amount)
+      fixedShare += amount
+      if (eventIdx >= 0) perEventMap.get(p.id)![eventIdx] = amount
+    }
 
     if (nonFixedAttendees.length === 0) continue
 
-    const fixedShare = fixedAttendees.reduce(
-      (s, p) => s + (fixedContrib.get(p.id)?.get(event.id) ?? 0),
-      0
-    )
     const gradientPool = event.amount - fixedShare
     if (gradientPool <= 0) continue
 
-    let weights: number[]
-    if (event.splitMode === 'equal') {
-      weights = nonFixedAttendees.map(() => 1)
-    } else if (manualMode) {
-      weights = getManualWeights(nonFixedAttendees)
-    } else {
-      const years = nonFixedAttendees.map((p) => getEquivalentYears(p.role, p.tenure_years))
-      const minY = Math.min(...years)
-      const maxY = Math.max(...years)
-      weights = years.map((y) =>
-        maxY === minY ? 1 : 1 + ((y - minY) / (maxY - minY)) * (gradient - 1)
-      )
-    }
+    const weights = eventWeights(nonFixedAttendees, event, gradient, manualMode)
     const totalWeight = weights.reduce((s, w) => s + w, 0)
 
     const rawAmounts = nonFixedAttendees.map(
@@ -257,16 +264,20 @@ export function applyRoundingPerEvent(
       if (residual !== 0) rounded[absorberIdx] += residual
     }
 
-    const eventOrigIdx = events.findIndex((e) => e.id === event.id)
     nonFixedAttendees.forEach((p, i) => {
       totals.set(p.id, (totals.get(p.id) ?? 0) + rounded[i])
-      if (eventOrigIdx >= 0) perEventMap.get(p.id)![eventOrigIdx] = rounded[i]
+      if (eventIdx >= 0) perEventMap.get(p.id)![eventIdx] = rounded[i]
     })
   }
 
-  // 浮動小数点誤差を除去：固定額は常にexactな値に補正
+  // 浮動小数点誤差を除去：旧方式（参加者単位）の固定額のみ、総額をexactな値に補正する。
+  // 会ごとの固定額を使っている人は会ごとに確定済みなので上書きしない。
   participants
-    .filter((p) => p.fixed_amount != null)
+    .filter(
+      (p) =>
+        p.fixed_amount != null &&
+        !activeEvents.some((e) => e.fixedAmounts?.[p.id] != null)
+    )
     .forEach((p) => totals.set(p.id, p.fixed_amount!))
 
   const rawPayments = calculateRawPayments(participants, events, gradient, manualMode)
@@ -291,24 +302,30 @@ export function calculatePerEventAmounts(
     result[p.id] = events.map(() => null)
   })
 
+  const activeEvents = events.filter((e) => e.amount > 0)
+  const fixedByEvent = buildFixedByEvent(participants, activeEvents)
+
   events.forEach((event, idx) => {
     if (event.amount <= 0) return
+    const fixedHere = fixedByEvent.get(event.id) ?? new Map<string, number>()
 
-    const attendees = participants.filter(
-      (p) => p.fixed_amount == null && event.attendeeIds.includes(p.id)
-    )
-    if (attendees.length === 0) return
+    const all = participants.filter((p) => event.attendeeIds.includes(p.id))
+    let pool = event.amount
+    for (const p of all) {
+      const amount = fixedHere.get(p.id)
+      if (amount == null) continue
+      result[p.id][idx] = Math.round(amount)
+      pool -= amount
+    }
 
-    const years = attendees.map((p) => getEquivalentYears(p.role, p.tenure_years))
-    const minY = Math.min(...years)
-    const maxY = Math.max(...years)
-    const weights = years.map((y) =>
-      maxY === minY ? 1 : 1 + ((y - minY) / (maxY - minY)) * (gradient - 1)
-    )
+    const attendees = all.filter((p) => fixedHere.get(p.id) == null)
+    if (attendees.length === 0 || pool <= 0) return
+
+    const weights = eventWeights(attendees, event, gradient, false)
     const totalWeight = weights.reduce((s, w) => s + w, 0)
 
     attendees.forEach((p, i) => {
-      result[p.id][idx] = Math.round((event.amount * weights[i]) / totalWeight)
+      result[p.id][idx] = Math.round((pool * weights[i]) / totalWeight)
     })
   })
 

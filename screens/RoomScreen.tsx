@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
-  ActivityIndicator, Alert, Platform,
+  ActivityIndicator, Alert, Platform, TextInput, Keyboard,
 } from 'react-native'
 import * as Haptics from 'expo-haptics'
 import * as Clipboard from 'expo-clipboard'
@@ -11,12 +11,22 @@ import { applyRoundingPerEvent, ROLE_EQUIVALENT_YEARS, type ParticipantInput, ty
 import { updateRoomSaved, saveTemplate, isSettlementComplete } from '../lib/actions'
 import { getDeviceId } from '../lib/deviceId'
 import { recordSettlementCompletion } from '../lib/reviewPrompt'
+import { shouldShowFeedbackForm, submitFeedback } from '../lib/feedback'
 import { Colors } from '../theme/colors'
 
 type Unit = 500 | 1000
 type SaveStatus = 'not_ready' | 'saving' | 'saved' | 'error'
 
 const AUTO_SAVE_DELAY_MS = 3000
+
+// 5段階評価。左から順に rating 1〜5。
+const FEEDBACK_RATINGS = [
+  { value: 1, emoji: '😞', label: '不満' },
+  { value: 2, emoji: '😕', label: 'いまいち' },
+  { value: 3, emoji: '🙂', label: 'ふつう' },
+  { value: 4, emoji: '😄', label: '満足' },
+  { value: 5, emoji: '🤩', label: '大満足' },
+] as const
 
 function getRoleBadgeLabel(role: string, tenureYears: number | null): string {
   const displayRole = role === 'その他役職' ? 'その他' : role.replace('クラス', '')
@@ -107,6 +117,13 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
   const [toast, setToast] = useState<string | null>(null)
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // アプリへの評価・改善要望（任意）
+  const [feedbackVisible, setFeedbackVisible] = useState(false)
+  const [feedbackRating, setFeedbackRating] = useState<number | null>(null)
+  const [feedbackComment, setFeedbackComment] = useState('')
+  const [feedbackSending, setFeedbackSending] = useState(false)
+  const [feedbackDone, setFeedbackDone] = useState(false)
+
   const showToast = (message: string) => {
     setToast(message)
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
@@ -116,6 +133,28 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
   useEffect(() => {
     loadRoom()
   }, [shareId])
+
+  // 直近に送信済みの人には出さない
+  useEffect(() => {
+    let active = true
+    shouldShowFeedbackForm().then((show) => { if (active) setFeedbackVisible(show) })
+    return () => { active = false }
+  }, [])
+
+  const handleSubmitFeedback = async () => {
+    if (feedbackSending) return
+    setFeedbackSending(true)
+    try {
+      Keyboard.dismiss()
+      await submitFeedback({ rating: feedbackRating, comment: feedbackComment, roomId: room?.id ?? null })
+      if (Platform.OS === 'ios') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
+      setFeedbackDone(true)
+    } catch (e) {
+      Alert.alert('送信できませんでした', e instanceof Error ? e.message : '時間をおいて試してください')
+    } finally {
+      setFeedbackSending(false)
+    }
+  }
 
   // 精算が成立したら（参加者2人以上・合計金額 > 0）自動で履歴に保存する。
   // 保存済みのルームでは走らないので、開き直しても再保存・再カウントされない。
@@ -156,7 +195,7 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
       const { data: rawEvents } = await supabase.from('nomikai_seisan_events').select('*').eq('room_id', roomData.id).order('sort_order', { ascending: true })
       const eventIds = (rawEvents ?? []).map((e) => e.id as string)
       const { data: rawAttendances } = eventIds.length
-        ? await supabase.from('nomikai_seisan_event_attendances').select('event_id, participant_id').in('event_id', eventIds)
+        ? await supabase.from('nomikai_seisan_event_attendances').select('event_id, participant_id, fixed_amount').in('event_id', eventIds)
         : { data: [] }
 
       setRoom({
@@ -176,13 +215,22 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
         is_organizer: p.is_organizer as boolean,
         manual_multiplier: (p.manual_multiplier as number | null) ?? 1,
       })))
-      const eventsData = (rawEvents ?? []).map((e) => ({
-        id: e.id as string,
-        name: e.event_name as string,
-        amount: e.total_amount as number,
-        splitMode: ((e.split_mode as string) === 'equal' ? 'equal' : 'tilt') as 'tilt' | 'equal',
-        attendeeIds: (rawAttendances ?? []).filter((a) => a.event_id === e.id).map((a) => a.participant_id as string),
-      }))
+      const eventsData = (rawEvents ?? []).map((e) => {
+        const rows = (rawAttendances ?? []).filter((a) => a.event_id === e.id)
+        const fixedAmounts: Record<string, number> = {}
+        rows.forEach((a) => {
+          const v = (a as { fixed_amount?: number | null }).fixed_amount
+          if (v != null) fixedAmounts[a.participant_id as string] = Number(v)
+        })
+        return {
+          id: e.id as string,
+          name: e.event_name as string,
+          amount: e.total_amount as number,
+          splitMode: ((e.split_mode as string) === 'equal' ? 'equal' : 'tilt') as 'tilt' | 'equal',
+          attendeeIds: rows.map((a) => a.participant_id as string),
+          fixedAmounts,
+        }
+      })
       setEvents(eventsData)
       const payerMap: Record<string, string | null> = {}
       ;(rawEvents ?? []).forEach((e) => {
@@ -338,6 +386,46 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
     await Clipboard.setStringAsync(buildResultText())
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
     showToast('コピーしました')
+  }
+
+  /**
+   * スプレッドシート用のタブ区切り(TSV)。貼り付けるとセルに分かれて表になる。
+   * 金額は ¥ と桁区切りを外した素の数値にして、貼り付け先でそのまま計算できるようにする。
+   * HTMLでのコピーはiOSでの挙動が保証されず、LINE経由だと失われるため平文TSVにしている。
+   */
+  const buildResultTsv = (): string => {
+    const multi = events.length > 1
+    const rows: string[][] = []
+
+    const header = ['名前', '役職・年次']
+    if (multi) events.forEach((ev, i) => header.push(ev.name || `${i + 1}次会`))
+    header.push('合計')
+    rows.push(header)
+
+    results.forEach((r) => {
+      const row = [r.name, getRoleBadgeLabel(r.role, r.tenure_years)]
+      if (multi) {
+        events.forEach((_, i) => {
+          const amt = r.perEventPayment[i]
+          row.push(amt != null ? String(amt) : '')
+        })
+      }
+      row.push(String(r.payment))
+      rows.push(row)
+    })
+
+    const totalRow = ['合計', '']
+    if (multi) events.forEach((ev) => totalRow.push(String(ev.amount)))
+    totalRow.push(String(grandTotal))
+    rows.push(totalRow)
+
+    return rows.map((cells) => cells.join('\t')).join('\n')
+  }
+
+  const handleCopyTable = async () => {
+    await Clipboard.setStringAsync(buildResultTsv())
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)
+    showToast('表としてコピーしました')
   }
 
   // 傾斜パターン比較（manualMode 時は傾斜倍率が効かないので非表示）
@@ -588,9 +676,12 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
 
       {/* アクションボタン群 */}
       <View style={styles.actionsCard}>
-        <Text style={styles.actionsTitle}>共有・保存</Text>
+        <Text style={styles.actionsTitle}>コピー・保存</Text>
         <TouchableOpacity style={[styles.actionBtn, styles.actionBtnCopy]} onPress={handleCopyResult}>
-          <Text style={[styles.actionBtnText, styles.actionBtnCopyText]}>📋 精算結果をコピー</Text>
+          <Text style={[styles.actionBtnText, styles.actionBtnCopyText]}>📋 文章でコピー（LINEなど）</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.actionBtn, styles.actionBtnCopy]} onPress={handleCopyTable}>
+          <Text style={[styles.actionBtnText, styles.actionBtnCopyText]}>📊 表でコピー（スプレッドシート）</Text>
         </TouchableOpacity>
         {Platform.OS === 'ios' && (
           <TouchableOpacity style={[styles.actionBtn, styles.actionBtnTemplate]} onPress={handleSaveTemplate} disabled={savingTemplate}>
@@ -598,6 +689,66 @@ export default function RoomScreen({ navigation, route }: RoomScreenProps) {
           </TouchableOpacity>
         )}
       </View>
+
+      {/* アプリへの評価・改善要望（任意）。送信済みの人には出さない。 */}
+      {feedbackVisible && (
+        <View style={styles.feedbackCard}>
+          {feedbackDone ? (
+            <View style={styles.feedbackDoneBox}>
+              <Text style={styles.feedbackDoneEmoji}>🙏</Text>
+              <Text style={styles.feedbackDoneText}>ご意見ありがとうございました</Text>
+              <Text style={styles.feedbackDoneSub}>今後の改善に使わせていただきます</Text>
+            </View>
+          ) : (
+            <>
+              <Text style={styles.feedbackTitle}>このアプリはいかがでしたか？</Text>
+              <Text style={styles.feedbackSub}>任意です。どちらか一方だけでも送れます</Text>
+
+              <View style={styles.feedbackRatingRow}>
+                {FEEDBACK_RATINGS.map((r) => {
+                  const selected = feedbackRating === r.value
+                  return (
+                    <TouchableOpacity
+                      key={r.value}
+                      style={[styles.feedbackRatingBtn, selected && styles.feedbackRatingBtnActive]}
+                      onPress={() => setFeedbackRating(selected ? null : r.value)}
+                      accessibilityLabel={r.label}
+                    >
+                      <Text style={styles.feedbackRatingEmoji}>{r.emoji}</Text>
+                      <Text style={[styles.feedbackRatingLabel, selected && styles.feedbackRatingLabelActive]}>{r.label}</Text>
+                    </TouchableOpacity>
+                  )
+                })}
+              </View>
+
+              <TextInput
+                style={styles.feedbackInput}
+                value={feedbackComment}
+                onChangeText={setFeedbackComment}
+                placeholder="改善してほしい点、使いにくかったところなど"
+                placeholderTextColor={Colors.placeholder}
+                multiline
+                maxLength={1000}
+              />
+
+              <TouchableOpacity
+                style={[
+                  styles.feedbackSubmitBtn,
+                  (feedbackRating == null && feedbackComment.trim() === '') && styles.feedbackSubmitBtnDisabled,
+                ]}
+                onPress={handleSubmitFeedback}
+                disabled={feedbackSending || (feedbackRating == null && feedbackComment.trim() === '')}
+              >
+                {feedbackSending
+                  ? <ActivityIndicator color={Colors.textOnPrimary} />
+                  : <Text style={styles.feedbackSubmitBtnText}>送信する</Text>}
+              </TouchableOpacity>
+
+              <Text style={styles.feedbackNote}>氏名や連絡先は送信されません</Text>
+            </>
+          )}
+        </View>
+      )}
 
       <TouchableOpacity
         style={styles.newBtn}
@@ -725,6 +876,29 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(22,41,140,0.92)', borderRadius: 24, paddingVertical: 12, paddingHorizontal: 20,
   },
   toastText: { color: Colors.textOnPrimary, fontSize: 14, fontWeight: '600' },
+  // アプリへの評価・改善要望（任意）
+  feedbackCard: { backgroundColor: Colors.card, borderRadius: 16, padding: 16, marginBottom: 14, borderWidth: 1, borderColor: Colors.border },
+  feedbackTitle: { fontSize: 15, fontWeight: '700', color: Colors.primary },
+  feedbackSub: { fontSize: 12, color: Colors.placeholder, marginTop: 4 },
+  feedbackRatingRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 6, marginTop: 14 },
+  feedbackRatingBtn: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 10, borderWidth: 1.5, borderColor: Colors.border, backgroundColor: Colors.background },
+  feedbackRatingBtnActive: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight },
+  feedbackRatingEmoji: { fontSize: 22 },
+  feedbackRatingLabel: { fontSize: 10, color: Colors.textSecondary, marginTop: 4 },
+  feedbackRatingLabelActive: { color: Colors.primary, fontWeight: '700' },
+  feedbackInput: {
+    borderWidth: 1, borderColor: Colors.border, borderRadius: 10, backgroundColor: Colors.background,
+    paddingHorizontal: 12, paddingTop: 10, paddingBottom: 10, fontSize: 14, color: Colors.text,
+    minHeight: 76, textAlignVertical: 'top', marginTop: 12,
+  },
+  feedbackSubmitBtn: { backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 13, alignItems: 'center', marginTop: 12 },
+  feedbackSubmitBtnDisabled: { opacity: 0.4 },
+  feedbackSubmitBtnText: { color: Colors.textOnPrimary, fontSize: 15, fontWeight: '700' },
+  feedbackNote: { fontSize: 11, color: Colors.placeholder, textAlign: 'center', marginTop: 8 },
+  feedbackDoneBox: { alignItems: 'center', paddingVertical: 12 },
+  feedbackDoneEmoji: { fontSize: 30 },
+  feedbackDoneText: { fontSize: 15, fontWeight: '700', color: Colors.primary, marginTop: 8 },
+  feedbackDoneSub: { fontSize: 12, color: Colors.placeholder, marginTop: 4 },
 })
 
 const saveStatusCardStyles = StyleSheet.create({
