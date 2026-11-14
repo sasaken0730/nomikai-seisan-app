@@ -115,9 +115,26 @@ npx expo start --host localhost --port 8085
   SELECT・UPDATE・DELETE がすべて可能な状態（2026-11-14 に検証済み）。
   anon キーはアプリに同梱される公開値のため、第三者が全データを閲覧・改変できる
 - `nomikai_seisan_feedback` のみ INSERT 専用ポリシーで保護済み
-- **対応方針**：Supabase の匿名サインインを有効化 → `rooms.owner_id` を追加 →
-  UPDATE/DELETE は `owner_id = auth.uid()`、SELECT は share_id ベース、という順で整備する。
-  申請とは独立した課題だが、優先度は高い
+- **対応方針（2026-11-14 時点の結論）**：リクエストヘッダー方式が使えることを実証済み。
+  ポリシー内から `current_setting('request.headers',true)::json->>'x-device-id'` が
+  読めることを本番で確認した。`created_by_device_id` は全行に入っているため、
+  **既存データの移行なしで閉じられる**：
+
+  ```sql
+  create policy rooms_own on nomikai_seisan_rooms for all to anon
+    using (created_by_device_id = current_setting('request.headers',true)::json->>'x-device-id');
+  ```
+
+  アプリ側は `createClient(url, key, { global: { headers: { 'x-device-id': deviceId } } })` の
+  1箇所。ただし `lib/supabase.ts` は現在同期生成なので、device_id を読んでから生成する
+  非同期初期化への変更が必要。**ヘッダーが付かないと全クエリが空になり履歴が消えて見える**ため、
+  ここだけは慎重に。
+- 恒久対応は匿名サインイン + `owner_id` だが、既存ユーザーの履歴移行が必要で重い。
+  まず上記で塞ぎ、必要になったら載せ替える
+- Web版（`~/projects/warikan` / `sasaken0730/nomikai-seisan`）が同じDBを使っているが、
+  最終コミット 2026-06-14 で役目を終えている。DBを閉じると動かなくなるため、
+  デプロイの停止とリポジトリのアーカイブを先に行うこと
+- 申請とは独立した課題。**v1.0.4 で対応予定**
 
 ---
 
